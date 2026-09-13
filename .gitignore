@@ -1,0 +1,25 @@
+# --- Secrets: NEVER commit ---
+env.txt
+env.paper.txt
+env.dashboard.txt
+.env
+*.key
+*.pem
+
+# --- Runtime artifacts ---
+logs/
+state/
+data/
+*.db
+*.db-wal
+*.db-shm
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Keep the shipped compiled strategy (do NOT ignore it despite *.pyc above)
+!Strategy/
+!Strategy/*.pyc

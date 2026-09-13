@@ -1,0 +1,42 @@
+# Allow the dashboard to drive exactly three units, with exactly three verbs.
+#
+# Install with:
+#   sudo install -m 0440 -o root -g root \
+#       deploy/polybot-dashboard.sudoers /etc/sudoers.d/polybot-dashboard
+#   sudo visudo -c            # ALWAYS validate before logging out
+#
+# Nothing here grants a shell, a package manager, or control of any other unit.
+# `--no-block` is included because the dashboard always passes it.
+
+Cmnd_Alias POLYBOT_UNITS = \
+    /usr/bin/systemctl start   polybot-paper.service, \
+    /usr/bin/systemctl stop    polybot-paper.service, \
+    /usr/bin/systemctl restart polybot-paper.service, \
+    /usr/bin/systemctl start   polybot-live.service, \
+    /usr/bin/systemctl stop    polybot-live.service, \
+    /usr/bin/systemctl restart polybot-live.service, \
+    /usr/bin/systemctl start   polybot-dashboard.service, \
+    /usr/bin/systemctl stop    polybot-dashboard.service, \
+    /usr/bin/systemctl restart polybot-dashboard.service, \
+    /usr/bin/systemctl start   polybot-paper.service --no-block, \
+    /usr/bin/systemctl stop    polybot-paper.service --no-block, \
+    /usr/bin/systemctl restart polybot-paper.service --no-block, \
+    /usr/bin/systemctl start   polybot-live.service --no-block, \
+    /usr/bin/systemctl stop    polybot-live.service --no-block, \
+    /usr/bin/systemctl restart polybot-live.service --no-block, \
+    /usr/bin/systemctl start   polybot-dashboard.service --no-block, \
+    /usr/bin/systemctl stop    polybot-dashboard.service --no-block, \
+    /usr/bin/systemctl restart polybot-dashboard.service --no-block
+
+Cmnd_Alias POLYBOT_LOGS = \
+    /usr/bin/journalctl -u polybot-paper.service *, \
+    /usr/bin/journalctl -u polybot-live.service *, \
+    /usr/bin/journalctl -u polybot-dashboard.service *
+
+polybot ALL=(root) NOPASSWD: POLYBOT_UNITS, POLYBOT_LOGS
+
+# The dashboard never prompts for a password (it runs `sudo -n`), so a missing
+# or malformed rule surfaces as a visible "permission denied" in the UI rather
+# than a hung request.
+Defaults!POLYBOT_UNITS !requiretty
+Defaults!POLYBOT_LOGS  !requiretty

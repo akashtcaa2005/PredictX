@@ -1,0 +1,19 @@
+# --- Secrets: NEVER commit ---
+env.txt
+.env
+*.key
+*.pem
+
+# --- Runtime artifacts ---
+logs/
+state/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Keep the shipped compiled strategy (do NOT ignore it despite *.pyc above)
+!Strategy/
+!Strategy/*.pyc

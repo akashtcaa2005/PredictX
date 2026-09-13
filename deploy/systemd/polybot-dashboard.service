@@ -1,0 +1,54 @@
+[Unit]
+Description=Polybot trading dashboard (API + web UI)
+Documentation=file:///opt/polybot/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polybot
+Group=polybot
+WorkingDirectory=/opt/polybot
+ExecStart=/opt/polybot/.venv/bin/python /opt/polybot/run_dashboard.py
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=6
+TimeoutStopSec=20
+
+Environment=PYTHONUNBUFFERED=1
+
+# --- sandboxing -------------------------------------------------------------
+# NOTE: NoNewPrivileges is deliberately NOT set. The dashboard drives the engine
+# units through `sudo -n systemctl`, which needs the setuid bit; enabling it here
+# would break every Start/Stop/Restart button with a silent permission error.
+# The sudoers rule in deploy/polybot-dashboard.sudoers is narrowly scoped to the
+# three unit names and three verbs, which is where the real limit lives.
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=no
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# Reads both engine trees (read-only by construction: it opens them with
+# sqlite mode=ro) and writes only its own tree.
+ReadWritePaths=/opt/polybot/data/dashboard
+ReadOnlyPaths=/opt/polybot/data/paper /opt/polybot/data/live
+# The emergency stop writes a kill switch into each engine's state directory.
+ReadWritePaths=/opt/polybot/data/paper/state /opt/polybot/data/live/state
+
+MemoryMax=700M
+MemoryHigh=520M
+CPUQuota=60%
+TasksMax=128
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-dashboard
+
+[Install]
+WantedBy=multi-user.target

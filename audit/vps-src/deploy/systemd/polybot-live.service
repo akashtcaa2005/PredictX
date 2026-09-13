@@ -1,0 +1,61 @@
+[Unit]
+Description=Polybot live trading engine (real funds)
+Documentation=file:///opt/polybot/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop protection belongs to the unit, not the service section — systemd
+# only reads StartLimit* here (in [Service] they are silently ignored).
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=polybot
+Group=polybot
+WorkingDirectory=/opt/polybot
+ExecStart=/opt/polybot/.venv/bin/python /opt/polybot/run.py
+Restart=always
+RestartSec=10
+# The engine cancels its open orders on SIGTERM; give it room to finish.
+TimeoutStopSec=90
+KillSignal=SIGTERM
+
+Environment=PYTHONUNBUFFERED=1
+# SAFETY LOCK: the process environment wins over env.txt because
+# load_env_file() uses override=False. Dry-run is therefore authoritative and
+# env.txt alone cannot arm live trading. Removing this line is the deliberate
+# manual step required to go live.
+Environment=ENABLE_LIVE_TRADING=false
+# Live trading stays OFF until you deliberately set ENABLE_LIVE_TRADING=true in
+# env.txt. Leaving it unset here means an accidental `systemctl start` runs a
+# dry-run, not a funded session.
+
+# --- sandboxing -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/opt/polybot/data/live
+
+MemoryMax=700M
+MemoryHigh=520M
+CPUQuota=70%
+TasksMax=96
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-live
+
+[Install]
+WantedBy=multi-user.target

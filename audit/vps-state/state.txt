@@ -1,0 +1,761 @@
+
+================ SERVICE: is-enabled / is-active ================
+polybot-live                 enabled=enabled active=active
+polybot-paper                enabled=enabled active=active
+polybot-dashboard            enabled=enabled active=active
+bot-s1                       enabled=disabled active=inactive
+
+================ SYSTEMCTL STATUS: polybot-live ================
+● polybot-live.service - Polybot live trading engine (real funds)
+     Loaded: loaded (/etc/systemd/system/polybot-live.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-08-08 03:24:34 UTC; 12min ago
+       Docs: file:///opt/bot-s1/Docs/DASHBOARD.md
+   Main PID: 38928 (python)
+      Tasks: 6 (limit: 96)
+     Memory: 47.7M (high: 520.0M max: 700.0M available: 472.2M peak: 48.2M)
+        CPU: 2.688s
+     CGroup: /system.slice/polybot-live.service
+             └─38928 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run.py
+
+Aug 08 03:36:21 polymarket-bot polybot-live[38928]: 2026-08-08T03:36:21.552+00:00 INFO    polybot.execution | HEARTBEAT | health="{'ts': '2026-08-08T03:36:21.552+00:00', 'wallet': '0x2918F32dDAaA108d4F6A92C58Bed6443396eE1D2', 'balance': 0.0, 'orders': {'total': 0, 'open': 0, 'open_notional': 0, 'by_status': {}}, 'positions': 0, 'pnl': {'realized': 0, 'unrealized': 0.0, 'total': 0.0}, 'exposure': 0, 'risk': {'halted': False, 'halt_reason': '', 'realized_pnl_today': 0.0, 'daily_loss_limit': 50.0}, 'connections': [{'channel': 'market', 'connected': True, 'last_message_ts': 1786160175.0126984, 'age_s': 6.5, 'reconnects': 0}, {'channel': 'user', 'connected': True, 'last_message_ts': 1786160176.098411, 'age_s': 5.5, 'reconnects': 0}], 'ticks': 706, 'latency': {'count': 202, 'avg_ms': 25.06, 'p50_ms': 24, 'p95_ms': 34, 'max_ms': 54}, 'heartbeat_age_s': 0.0}"
+Aug 08 03:36:36 polymarket-bot polybot-live[38928]: 2026-08-08T03:36:36.586+00:00 INFO    polybot.execution | HEARTBEAT | health="{'ts': '2026-08-08T03:36:36.586+00:00', 'wallet': '0x2918F32dDAaA108d4F6A92C58Bed6443396eE1D2', 'balance': 0.0, 'orders': {'total': 0, 'open': 0, 'open_notional': 0, 'by_status': {}}, 'positions': 0, 'pnl': {'realized': 0, 'unrealized': 0.0, 'total': 0.0}, 'exposure': 0, 'risk': {'halted': False, 'halt_reason': '', 'realized_pnl_today': 0.0, 'daily_loss_limit': 50.0}, 'connections': [{'channel': 'market', 'connected': True, 'last_message_ts': 1786160195.5531263, 'age_s': 1.0, 'reconnects': 0}, {'channel': 'user', 'connected': True, 'last_message_ts': 1786160196.1188512, 'age_s': 0.5, 'reconnects': 0}], 'ticks': 721, 'latency': {'count': 205, 'avg_ms': 25.07, 'p50_ms': 24, 'p95_ms': 34, 'max_ms': 54}, 'heartbeat_age_s': 0.0}"
+Aug 08 03:36:51 polymarket-bot polybot-live[38928]: 2026-08-08T03:36:51.615+00:00 INFO    polybot.execution | HEARTBEAT | health="{'ts': '2026-08-08T03:36:51.615+00:00', 'wallet': '0x2918F32dDAaA108d4F6A92C58Bed6443396eE1D2', 'balance': 0.0, 'orders': {'total': 0, 'open': 0, 'open_notional': 0, 'by_status': {}}, 'positions': 0, 'pnl': {'realized': 0, 'unrealized': 0.0, 'total': 0.0}, 'exposure': 0, 'risk': {'halted': False, 'halt_reason': '', 'realized_pnl_today': 0.0, 'daily_loss_limit': 50.0}, 'connections': [{'channel': 'market', 'connected': True, 'last_message_ts': 1786160205.5630322, 'age_s': 6.1, 'reconnects': 0}, {'channel': 'user', 'connected': True, 'last_message_ts': 1786160206.1284769, 'age_s': 5.5, 'reconnects': 0}], 'ticks': 736, 'latency': {'count': 210, 'avg_ms': 25.15, 'p50_ms': 24, 'p95_ms': 35, 'max_ms': 54}, 'heartbeat_age_s': 0.0}"
+
+================ SYSTEMCTL SHOW (limits/restart): polybot-live ================
+Restart=always
+NRestarts=0
+ExecMainPID=38928
+ExecStart={ path=/opt/bot-s1/.venv/bin/python ; argv[]=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run.py ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+MemoryHigh=545259520
+MemoryMax=734003200
+WorkingDirectory=/opt/bot-s1
+User=botuser
+ActiveEnterTimestamp=Sat 2026-08-08 03:24:34 UTC
+
+================ SYSTEMCTL STATUS: polybot-paper ================
+● polybot-paper.service - Polybot paper trading engine (simulated money, real order books)
+     Loaded: loaded (/etc/systemd/system/polybot-paper.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-08-08 03:24:02 UTC; 12min ago
+       Docs: file:///opt/bot-s1/Docs/DASHBOARD.md
+   Main PID: 38778 (python)
+      Tasks: 5 (limit: 96)
+     Memory: 45.0M (high: 450.0M max: 600.0M available: 404.9M peak: 45.5M)
+        CPU: 3.299s
+     CGroup: /system.slice/polybot-paper.service
+             └─38778 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run_paper.py
+
+Aug 08 03:24:03 polymarket-bot polybot-paper[38778]: 2026-08-08T03:24:03.093+00:00 INFO    polybot.orders | order manager started | dry_run=False
+Aug 08 03:24:03 polymarket-bot polybot-paper[38778]: 2026-08-08T03:24:03.105+00:00 INFO    polybot.strategy | strategy runner started | strategy=1c_buy interval_s=1.0
+Aug 08 03:24:03 polymarket-bot polybot-paper[38778]: 2026-08-08T03:24:03.160+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=market url=wss://ws-subscriptions-clob.polymarket.com/ws/market
+
+================ SYSTEMCTL SHOW (limits/restart): polybot-paper ================
+Restart=always
+NRestarts=0
+ExecMainPID=38778
+ExecStart={ path=/opt/bot-s1/.venv/bin/python ; argv[]=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run_paper.py ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+MemoryHigh=471859200
+MemoryMax=629145600
+WorkingDirectory=/opt/bot-s1
+User=botuser
+ActiveEnterTimestamp=Sat 2026-08-08 03:24:02 UTC
+
+================ SYSTEMCTL STATUS: polybot-dashboard ================
+● polybot-dashboard.service - Polybot trading dashboard (API + web UI)
+     Loaded: loaded (/etc/systemd/system/polybot-dashboard.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-08-08 03:26:26 UTC; 10min ago
+       Docs: file:///opt/bot-s1/Docs/DASHBOARD.md
+   Main PID: 39309 (python)
+      Tasks: 8 (limit: 128)
+     Memory: 90.6M (high: 520.0M max: 700.0M available: 429.3M peak: 92.0M)
+        CPU: 17.170s
+     CGroup: /system.slice/polybot-dashboard.service
+             └─39309 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run_dashboard.py
+
+Aug 08 03:36:47 polymarket-bot polybot-dashboard[39309]: 2026-08-08T03:36:47+0000 ERROR   py_clob_client_v2.http_helpers.helpers | [py_clob_client_v2] request error: [Errno 11] Resource temporarily unavailable
+Aug 08 03:36:47 polymarket-bot polybot-dashboard[39309]: 2026-08-08T03:36:47+0000 ERROR   py_clob_client_v2.http_helpers.helpers | [py_clob_client_v2] request error: [Errno 11] Resource temporarily unavailable
+Aug 08 03:36:47 polymarket-bot polybot-dashboard[39309]: 2026-08-08T03:36:47+0000 ERROR   py_clob_client_v2.http_helpers.helpers | [py_clob_client_v2] request error: [Errno 11] Resource temporarily unavailable
+
+================ SYSTEMCTL SHOW (limits/restart): polybot-dashboard ================
+Restart=always
+NRestarts=0
+ExecMainPID=39309
+ExecStart={ path=/opt/bot-s1/.venv/bin/python ; argv[]=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run_dashboard.py ; ignore_errors=no ; start_time=[Sat 2026-08-08 03:26:26 UTC] ; stop_time=[n/a] ; pid=39309 ; code=(null) ; status=0/0 }
+MemoryHigh=545259520
+MemoryMax=734003200
+WorkingDirectory=/opt/bot-s1
+User=botuser
+ActiveEnterTimestamp=Sat 2026-08-08 03:26:26 UTC
+
+================ UNIT FILES (/etc/systemd/system) ================
+----- /etc/systemd/system/polybot-live.service -----
+[Unit]
+Description=Polybot live trading engine (real funds)
+Documentation=file:///opt/bot-s1/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop protection belongs to the unit, not the service section.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/bot-s1
+ExecStart=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run.py
+Restart=always
+RestartSec=10
+# The engine cancels its open orders on SIGTERM; give it room to finish.
+TimeoutStopSec=90
+KillSignal=SIGTERM
+
+Environment=PYTHONUNBUFFERED=1
+# SAFETY LOCK: the process environment wins over env.txt because
+# load_env_file() uses override=False. Dry-run is therefore authoritative
+# and env.txt alone cannot arm live trading. Removing this line is the
+# deliberate manual step required to go live.
+Environment=ENABLE_LIVE_TRADING=false
+# Live trading stays OFF until you deliberately set ENABLE_LIVE_TRADING=true in
+# env.txt. Leaving it unset here means an accidental `systemctl start` runs a
+# dry-run, not a funded session.
+
+# --- sandboxing -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/opt/bot-s1/data/live
+
+MemoryMax=700M
+MemoryHigh=520M
+CPUQuota=70%
+TasksMax=96
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-live
+
+[Install]
+WantedBy=multi-user.target
+----- /etc/systemd/system/polybot-paper.service -----
+[Unit]
+Description=Polybot paper trading engine (simulated money, real order books)
+Documentation=file:///opt/bot-s1/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop protection belongs to the unit, not the service section.
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/bot-s1
+ExecStart=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run_paper.py
+Restart=always
+RestartSec=5
+# Give up only if it is crash-looping: 6 restarts inside 5 minutes.
+TimeoutStopSec=45
+KillSignal=SIGTERM
+
+# The paper engine must never see a wallet credential. It also scrubs these from
+# its own environment at startup; this is the second line of defence.
+Environment=PYTHONUNBUFFERED=1
+Environment=ENABLE_LIVE_TRADING=false
+UnsetEnvironment=POLYMARKET_PRIVATE_KEY POLYMARKET_PROXY_ADDRESS POLY_API_KEY POLY_API_SECRET POLY_API_PASSPHRASE POLY_BUILDER_API_KEY POLY_BUILDER_SECRET POLY_BUILDER_PASSPHRASE
+
+# --- sandboxing -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Only the paper data tree is writable — it cannot touch live state.
+ReadWritePaths=/opt/bot-s1/data/paper
+
+# --- resource ceilings (2 vCPU / 4 GB VPS) ----------------------------------
+MemoryMax=600M
+MemoryHigh=450M
+CPUQuota=60%
+TasksMax=96
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-paper
+
+[Install]
+WantedBy=multi-user.target
+----- /etc/systemd/system/polybot-dashboard.service -----
+[Unit]
+Description=Polybot trading dashboard (API + web UI)
+Documentation=file:///opt/bot-s1/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop protection belongs to the unit, not the service section.
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/bot-s1
+ExecStart=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run_dashboard.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+Environment=PYTHONUNBUFFERED=1
+
+# --- sandboxing -------------------------------------------------------------
+# NOTE: NoNewPrivileges is deliberately NOT set. The dashboard drives the engine
+# units through `sudo -n systemctl`, which needs the setuid bit; enabling it here
+# would break every Start/Stop/Restart button with a silent permission error.
+# The sudoers rule in deploy/polybot-dashboard.sudoers is narrowly scoped to the
+# three unit names and three verbs, which is where the real limit lives.
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=no
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# Reads both engine trees (read-only by construction: it opens them with
+# sqlite mode=ro) and writes only its own tree.
+ReadWritePaths=/opt/bot-s1/data/dashboard
+ReadOnlyPaths=/opt/bot-s1/data/paper /opt/bot-s1/data/live
+# The emergency stop writes a kill switch into each engine's state directory.
+ReadWritePaths=/opt/bot-s1/data/paper/state /opt/bot-s1/data/live/state
+
+MemoryMax=700M
+MemoryHigh=520M
+CPUQuota=60%
+TasksMax=128
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-dashboard
+
+[Install]
+WantedBy=multi-user.target
+----- /etc/systemd/system/bot-s1.service -----
+[Unit]
+Description=Bot-s1 Polymarket Trading Bot (DRY-RUN)
+Documentation=file:/opt/bot-s1/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/bot-s1
+
+# SAFETY LOCK: process env wins over env.txt (settings.load_env_file override=False),
+# so live trading cannot be armed via env.txt while this line is present.
+Environment=ENABLE_LIVE_TRADING=false
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/opt/bot-s1/.venv/bin/python /opt/bot-s1/run.py
+
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bot-s1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ReadWritePaths=/opt/bot-s1
+
+[Install]
+WantedBy=multi-user.target
+
+================ FULL FILE TREE (excl .venv/.git/__pycache__/node_modules) ================
+/opt/bot-s1/dashboard/analytics.py
+/opt/bot-s1/dashboard/config.py
+/opt/bot-s1/dashboard/control.py
+/opt/bot-s1/dashboard/db.py
+/opt/bot-s1/dashboard/engine_view.py
+/opt/bot-s1/dashboard/hub.py
+/opt/bot-s1/dashboard/indicators.py
+/opt/bot-s1/dashboard/__init__.py
+/opt/bot-s1/dashboard/journal.py
+/opt/bot-s1/dashboard/live_sync.py
+/opt/bot-s1/dashboard/market_feed.py
+/opt/bot-s1/dashboard/notifications.py
+/opt/bot-s1/dashboard/security.py
+/opt/bot-s1/dashboard/server.py
+/opt/bot-s1/dashboard/state.py
+/opt/bot-s1/dashboard/static/app.js
+/opt/bot-s1/dashboard/static/charts.js
+/opt/bot-s1/dashboard/static/index.html
+/opt/bot-s1/dashboard/static/styles.css
+/opt/bot-s1/dashboard/vps.py
+/opt/bot-s1/data/dashboard/dashboard.db
+/opt/bot-s1/data/dashboard/dashboard.db-shm
+/opt/bot-s1/data/dashboard/dashboard.db-wal
+/opt/bot-s1/data/live/engine.db
+/opt/bot-s1/data/live/engine.db-shm
+/opt/bot-s1/data/live/engine.db-wal
+/opt/bot-s1/data/live/logs/api.log
+/opt/bot-s1/data/live/logs/errors.log
+/opt/bot-s1/data/live/logs/execution.log
+/opt/bot-s1/data/live/logs/orders.log
+/opt/bot-s1/data/live/logs/strategy.log
+/opt/bot-s1/data/live/logs/trade.log
+/opt/bot-s1/data/live/logs/wallet.log
+/opt/bot-s1/data/live/logs/websocket.log
+/opt/bot-s1/data/live/state/readiness.json
+/opt/bot-s1/data/live/state/status.json
+/opt/bot-s1/data/paper/engine.db
+/opt/bot-s1/data/paper/engine.db-shm
+/opt/bot-s1/data/paper/engine.db-wal
+/opt/bot-s1/data/paper/logs/api.log
+/opt/bot-s1/data/paper/logs/errors.log
+/opt/bot-s1/data/paper/logs/execution.log
+/opt/bot-s1/data/paper/logs/orders.log
+/opt/bot-s1/data/paper/logs/strategy.log
+/opt/bot-s1/data/paper/logs/trade.log
+/opt/bot-s1/data/paper/logs/wallet.log
+/opt/bot-s1/data/paper/logs/websocket.log
+/opt/bot-s1/data/paper/state/last_state.json
+/opt/bot-s1/deploy/install.sh
+/opt/bot-s1/deploy/nginx/polybot-dashboard.conf
+/opt/bot-s1/deploy/polybot-dashboard.sudoers
+/opt/bot-s1/deploy.sh
+/opt/bot-s1/deploy/systemd/polybot-dashboard.service
+/opt/bot-s1/deploy/systemd/polybot-live.service
+/opt/bot-s1/deploy/systemd/polybot-paper.service
+/opt/bot-s1/Docs/CLOB_V2_MIGRATION.md
+/opt/bot-s1/Docs/DASHBOARD.md
+/opt/bot-s1/Docs/polymarket trading.txt
+/opt/bot-s1/env.dashboard.example.txt
+/opt/bot-s1/env.dashboard.txt
+/opt/bot-s1/env.example.txt
+/opt/bot-s1/env.paper.example.txt
+/opt/bot-s1/env.paper.txt
+/opt/bot-s1/env.txt
+/opt/bot-s1/.gitignore
+/opt/bot-s1/logs/api.log
+/opt/bot-s1/logs/audit/errors.log
+/opt/bot-s1/logs/audit/execution.log
+/opt/bot-s1/logs/audit/orders.log
+/opt/bot-s1/logs/audit/strategy.log
+/opt/bot-s1/logs/audit/trade.log
+/opt/bot-s1/logs/audit/websocket.log
+/opt/bot-s1/logs/dashboard-audit.log
+/opt/bot-s1/logs/errors.log
+/opt/bot-s1/logs/execution.log
+/opt/bot-s1/logs/orders.log
+/opt/bot-s1/logs/strategy.log
+/opt/bot-s1/logs/trade.log
+/opt/bot-s1/logs/wallet.log
+/opt/bot-s1/logs/websocket.log
+/opt/bot-s1/polybot/api/camber.py
+/opt/bot-s1/polybot/api/__init__.py
+/opt/bot-s1/polybot/api/rest_client.py
+/opt/bot-s1/polybot/config/__init__.py
+/opt/bot-s1/polybot/config/paths.py
+/opt/bot-s1/polybot/config/settings.py
+/opt/bot-s1/polybot/dashboard/__init__.py
+/opt/bot-s1/polybot/dashboard/server.py
+/opt/bot-s1/polybot/exchange/auth.py
+/opt/bot-s1/polybot/exchange/clob.py
+/opt/bot-s1/polybot/exchange/__init__.py
+/opt/bot-s1/polybot/exchange/market_registry.py
+/opt/bot-s1/polybot/exchange/websocket.py
+/opt/bot-s1/polybot/execution/executor.py
+/opt/bot-s1/polybot/execution/__init__.py
+/opt/bot-s1/polybot/execution/strategy_runner.py
+/opt/bot-s1/polybot/__init__.py
+/opt/bot-s1/polybot/logging/__init__.py
+/opt/bot-s1/polybot/logging/loggers.py
+/opt/bot-s1/polybot/main.py
+/opt/bot-s1/polybot/monitoring/health.py
+/opt/bot-s1/polybot/monitoring/__init__.py
+/opt/bot-s1/polybot/monitoring/metrics.py
+/opt/bot-s1/polybot/orders/__init__.py
+/opt/bot-s1/polybot/orders/manager.py
+/opt/bot-s1/polybot/orders/models.py
+/opt/bot-s1/polybot/paper/account.py
+/opt/bot-s1/polybot/paper/exchange.py
+/opt/bot-s1/polybot/paper/__init__.py
+/opt/bot-s1/polybot/paper/main.py
+/opt/bot-s1/polybot/portfolio/__init__.py
+/opt/bot-s1/polybot/portfolio/manager.py
+/opt/bot-s1/polybot/risk/engine.py
+/opt/bot-s1/polybot/risk/__init__.py
+/opt/bot-s1/polybot/strategy/base.py
+/opt/bot-s1/polybot/strategy/__init__.py
+/opt/bot-s1/polybot/strategy/loader.py
+/opt/bot-s1/polybot/strategy/market_data.py
+/opt/bot-s1/polybot/telemetry/__init__.py
+/opt/bot-s1/polybot/telemetry/publisher.py
+/opt/bot-s1/polybot/telemetry/recorder.py
+/opt/bot-s1/polybot/telemetry/schema.py
+/opt/bot-s1/polybot/utils/__init__.py
+/opt/bot-s1/polybot/utils/retry.py
+/opt/bot-s1/polybot/utils/time_utils.py
+/opt/bot-s1/polybot/wallet/allowance.py
+/opt/bot-s1/polybot/wallet/approval.py
+/opt/bot-s1/polybot/wallet/balance.py
+/opt/bot-s1/polybot/wallet/__init__.py
+/opt/bot-s1/polybot/wallet/maker.py
+/opt/bot-s1/polybot/wallet/readiness.py
+/opt/bot-s1/README.md
+/opt/bot-s1/requirements.txt
+/opt/bot-s1/run_dashboard.py
+/opt/bot-s1/run_paper.py
+/opt/bot-s1/run.py
+/opt/bot-s1/scripts/__init__.py
+/opt/bot-s1/scripts/live_execution_audit.py
+/opt/bot-s1/scripts/preflight.py
+/opt/bot-s1/state/dashboard.db
+/opt/bot-s1/state/last_state.json
+/opt/bot-s1/state/readiness.json
+/opt/bot-s1/state/status.json
+/opt/bot-s1/Strategy/s1_cheap_buy.cpython-313.pyc
+/opt/bot-s1/tests/__init__.py
+/opt/bot-s1/tests/test_allowance_offline.py
+/opt/bot-s1/tests/test_dashboard_offline.py
+/opt/bot-s1/tests/test_engine_offline.py
+/opt/bot-s1/tests/test_paper_offline.py
+/opt/bot-s1/tests/test_startup_offline.py
+/opt/bot-s1/tests/test_strategy_wiring.py
+/opt/bot-s1/tests/test_telemetry_offline.py
+
+================ PYTHON / SDK VERSIONS ================
+Python 3.13.15
+--- py-clob-client-v2 ---
+Name: py_clob_client_v2
+Version: 1.1.0
+Location: /opt/bot-s1/.venv/lib/python3.13/site-packages
+--- py-clob-client (old) ---
+--- key deps ---
+aiohttp==3.14.3
+eth-account==0.13.7
+eth-hash==0.8.0
+eth-keyfile==0.8.1
+eth-keys==0.7.0
+eth-rlp==2.2.0
+eth-typing==6.0.0
+eth-utils==6.0.0
+fastapi==0.141.1
+httpx==0.28.1
+py_clob_client_v2==1.1.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+pytest==9.1.1
+starlette==1.4.1
+uvicorn==0.52.1
+web3==7.16.0
+websockets==15.0.1
+
+================ SDK IMPORT USAGE ================
+--- py_clob_client_v2 refs ---
+/opt/bot-s1/polybot/exchange/auth.py
+/opt/bot-s1/polybot/exchange/clob.py
+/opt/bot-s1/polybot/dashboard/server.py
+/opt/bot-s1/polybot/wallet/allowance.py
+/opt/bot-s1/polybot/wallet/maker.py
+/opt/bot-s1/polybot/wallet/approval.py
+/opt/bot-s1/polybot/paper/main.py
+--- OLD py_clob_client refs ---
+/opt/bot-s1/polybot/paper/main.py
+
+================ SAFETY FLAGS (env files, non-secret flags only) ================
+----- /opt/bot-s1/env.txt (KEYS ONLY) -----
+CAMBER_API_TOKEN
+MARKETS
+POLY_BUILDER_API_KEY
+POLY_BUILDER_PASSPHRASE
+POLY_BUILDER_SECRET
+POLYMARKET_PRIVATE_KEY
+POLYMARKET_PROXY_ADDRESS
+  -- safety flags --
+----- /opt/bot-s1/env.paper.txt (KEYS ONLY) -----
+BOOK_REFRESH_INTERVAL_S
+CANCEL_OPEN_ORDERS_ON_SHUTDOWN
+CHAIN_ID
+CLOB_HOST
+CLOB_WS_URL
+COOLDOWN_SECONDS
+DEDUP_WINDOW_S
+EQUITY_SAMPLE_INTERVAL_S
+GAMMA_HOST
+LOG_LEVEL
+MARKETS
+MAX_CONCURRENT_TRADES
+MAX_DAILY_LOSS
+MAX_OPEN_ORDERS
+MAX_ORDER_VALUE
+MAX_POSITION_SIZE
+MAX_TOTAL_EXPOSURE
+MAX_TRADE_VALUE
+MIN_ORDER_SHARES
+ORDER_POLL_INTERVAL_S
+PAPER_FEE_BPS
+PAPER_FILL_LATENCY_MS
+PAPER_MAKER_FILL_RATIO
+PAPER_SLIPPAGE_TICKS
+PAPER_STARTING_CASH
+PER_ORDER_NOTIONAL
+TELEMETRY_INTERVAL_S
+TICK_INTERVAL_S
+  -- safety flags --
+PAPER_STARTING_CASH=1000
+PAPER_FILL_LATENCY_MS=250
+PAPER_SLIPPAGE_TICKS=0
+PAPER_FEE_BPS=0
+PAPER_MAKER_FILL_RATIO=1.0
+----- /opt/bot-s1/env.dashboard.txt (KEYS ONLY) -----
+ALERT_COOLDOWN_S
+ALERT_CPU_PCT
+ALERT_DISK_PCT
+ALERT_ENGINE_STALE_S
+ALERT_LOW_BALANCE
+ALERT_MEMORY_PCT
+ALERT_PROFIT_TARGET
+ALERT_STOP_LOSS
+ALERT_WS_STALE_S
+BROADCAST_INTERVAL_S
+CANDLE_INTERVAL_S
+CANDLE_RETENTION
+CLOB_HOST
+CLOB_WS_URL
+DASHBOARD_ADMIN_USER
+DASHBOARD_ASSETS
+DASHBOARD_BEHIND_PROXY
+DASHBOARD_CONTROL_ENABLED
+DASHBOARD_COOKIE_SECURE
+DASHBOARD_DURATIONS
+DASHBOARD_HOST
+DASHBOARD_LIVE_SYNC
+DASHBOARD_LOGIN_LOCKOUT_S
+DASHBOARD_LOGIN_MAX_ATTEMPTS
+DASHBOARD_PORT
+DASHBOARD_PUBLIC_URL
+DASHBOARD_SECRET_KEY
+DASHBOARD_SESSION_IDLE_S
+DASHBOARD_SESSION_TTL_S
+DASHBOARD_UNIT
+DASHBOARD_USE_SUDO
+DATA_API_HOST
+DISCORD_ENABLED
+DISCORD_WEBHOOK_URL
+EMAIL_ENABLED
+EMAIL_FROM
+EMAIL_TO
+GAMMA_HOST
+HISTORY_POINTS
+HTTP_TIMEOUT
+LIVE_SLOW_SYNC_INTERVAL_S
+LIVE_SYNC_INTERVAL_S
+LIVE_UNIT
+MARKET_DISCOVERY_INTERVAL_S
+MAX_MARKETS_TRACKED
+NOTIFY_MIN_SEVERITY
+PAPER_UNIT
+SMTP_HOST
+SMTP_PASSWORD
+SMTP_PORT
+SMTP_STARTTLS
+SMTP_USER
+SYSTEMCTL_BIN
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+TELEGRAM_ENABLED
+VPS_INTERVAL_S
+  -- safety flags --
+PAPER_UNIT=polybot-paper.service
+LIVE_UNIT=polybot-live.service
+LIVE_SYNC_INTERVAL_S=3
+LIVE_SLOW_SYNC_INTERVAL_S=30
+
+================ PORTS LISTENING ================
+LISTEN 0      2048       127.0.0.1:8080      0.0.0.0:*    users:(("python",pid=39309,fd=19))                    
+
+================ PROCESSES (bot-related) ================
+  38778       1 botuser   0.4  1.5       12:54 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run_paper.py
+  38928       1 botuser   0.3  1.5       12:22 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run.py
+  39309       1 botuser   2.4  2.7       10:30 /opt/bot-s1/.venv/bin/python /opt/bot-s1/run_dashboard.py
+
+================ DATA DIRS + SQLITE DBS ================
+/opt/bot-s1/data/dashboard/dashboard.db
+/opt/bot-s1/data/dashboard/dashboard.db-shm
+/opt/bot-s1/data/dashboard/dashboard.db-wal
+/opt/bot-s1/data/live/engine.db
+/opt/bot-s1/data/live/engine.db-shm
+/opt/bot-s1/data/live/engine.db-wal
+/opt/bot-s1/data/live/logs/api.log
+/opt/bot-s1/data/live/logs/errors.log
+/opt/bot-s1/data/live/logs/execution.log
+/opt/bot-s1/data/live/logs/orders.log
+/opt/bot-s1/data/live/logs/strategy.log
+/opt/bot-s1/data/live/logs/trade.log
+/opt/bot-s1/data/live/logs/wallet.log
+/opt/bot-s1/data/live/logs/websocket.log
+/opt/bot-s1/data/live/state/readiness.json
+/opt/bot-s1/data/live/state/status.json
+/opt/bot-s1/data/paper/engine.db
+/opt/bot-s1/data/paper/engine.db-shm
+/opt/bot-s1/data/paper/engine.db-wal
+/opt/bot-s1/data/paper/logs/api.log
+/opt/bot-s1/data/paper/logs/errors.log
+/opt/bot-s1/data/paper/logs/execution.log
+/opt/bot-s1/data/paper/logs/orders.log
+/opt/bot-s1/data/paper/logs/strategy.log
+/opt/bot-s1/data/paper/logs/trade.log
+/opt/bot-s1/data/paper/logs/wallet.log
+/opt/bot-s1/data/paper/logs/websocket.log
+/opt/bot-s1/data/paper/state/last_state.json
+--- db sizes ---
+-rw-r--r-- 1 botuser botuser 94208 Aug  8 03:26 /opt/bot-s1/data/dashboard/dashboard.db
+-rw-r--r-- 1 botuser botuser 94208 Aug  8 03:34 /opt/bot-s1/data/live/engine.db
+-rw-r--r-- 1 botuser botuser 94208 Aug  8 03:34 /opt/bot-s1/data/paper/engine.db
+--- SCHEMA: /opt/bot-s1/data/dashboard/dashboard.db ---
+bash: line 66: sqlite3: command not found
+bash: line 67: sqlite3: command not found
+--- SCHEMA: /opt/bot-s1/data/live/engine.db ---
+bash: line 66: sqlite3: command not found
+bash: line 67: sqlite3: command not found
+--- SCHEMA: /opt/bot-s1/data/paper/engine.db ---
+bash: line 66: sqlite3: command not found
+bash: line 67: sqlite3: command not found
+
+================ STATE DIR ================
+-rw-r--r-- 1 botuser botuser 20480 Aug  7 19:56 /opt/bot-s1/state/dashboard.db
+-rw-rw-r-- 1 botuser botuser  1244 Aug  8 03:24 /opt/bot-s1/state/last_state.json
+-rw-rw-r-- 1 botuser botuser   988 Aug  8 03:22 /opt/bot-s1/state/readiness.json
+-rw-r--r-- 1 botuser botuser   735 Aug  8 03:24 /opt/bot-s1/state/status.json
+
+================ LOGS (list + sizes) ================
+-rw-r--r-- 1 botuser botuser       0 Aug  8 03:24 /opt/bot-s1/data/live/logs/api.log
+-rw-r--r-- 1 botuser botuser    1798 Aug  8 03:24 /opt/bot-s1/data/live/logs/errors.log
+-rw-r--r-- 1 botuser botuser   44811 Aug  8 03:36 /opt/bot-s1/data/live/logs/execution.log
+-rw-r--r-- 1 botuser botuser      92 Aug  8 03:24 /opt/bot-s1/data/live/logs/orders.log
+-rw-r--r-- 1 botuser botuser     114 Aug  8 03:24 /opt/bot-s1/data/live/logs/strategy.log
+-rw-r--r-- 1 botuser botuser       0 Aug  8 03:24 /opt/bot-s1/data/live/logs/trade.log
+-rw-r--r-- 1 botuser botuser    7438 Aug  8 03:36 /opt/bot-s1/data/live/logs/wallet.log
+-rw-r--r-- 1 botuser botuser     312 Aug  8 03:24 /opt/bot-s1/data/live/logs/websocket.log
+-rw-r--r-- 1 botuser botuser       0 Aug  8 03:23 /opt/bot-s1/data/paper/logs/api.log
+-rw-r--r-- 1 botuser botuser      94 Aug  8 03:24 /opt/bot-s1/data/paper/logs/errors.log
+-rw-r--r-- 1 botuser botuser    6204 Aug  8 03:24 /opt/bot-s1/data/paper/logs/execution.log
+-rw-r--r-- 1 botuser botuser     267 Aug  8 03:24 /opt/bot-s1/data/paper/logs/orders.log
+-rw-r--r-- 1 botuser botuser     228 Aug  8 03:24 /opt/bot-s1/data/paper/logs/strategy.log
+-rw-r--r-- 1 botuser botuser       0 Aug  8 03:23 /opt/bot-s1/data/paper/logs/trade.log
+-rw-r--r-- 1 botuser botuser       0 Aug  8 03:23 /opt/bot-s1/data/paper/logs/wallet.log
+-rw-r--r-- 1 botuser botuser     316 Aug  8 03:24 /opt/bot-s1/data/paper/logs/websocket.log
+-rw-r--r-- 1 botuser botuser       0 Aug  7 19:07 /opt/bot-s1/logs/api.log
+-rw-rw-r-- 1 botuser botuser    2666 Aug  7 18:17 /opt/bot-s1/logs/audit/errors.log
+-rw-rw-r-- 1 botuser botuser    9231 Aug  7 18:17 /opt/bot-s1/logs/audit/execution.log
+-rw-rw-r-- 1 botuser botuser    1680 Aug  7 18:17 /opt/bot-s1/logs/audit/orders.log
+-rw-rw-r-- 1 botuser botuser       0 Aug  7 09:18 /opt/bot-s1/logs/audit/strategy.log
+-rw-rw-r-- 1 botuser botuser       0 Aug  7 09:18 /opt/bot-s1/logs/audit/trade.log
+-rw-rw-r-- 1 botuser botuser     936 Aug  7 18:17 /opt/bot-s1/logs/audit/websocket.log
+-rw-r--r-- 1 botuser botuser     262 Aug  7 21:19 /opt/bot-s1/logs/dashboard-audit.log
+-rw-rw-r-- 1 botuser botuser   92009 Aug  8 03:24 /opt/bot-s1/logs/errors.log
+-rw-rw-r-- 1 botuser botuser 3575569 Aug  8 03:24 /opt/bot-s1/logs/execution.log
+-rw-rw-r-- 1 botuser botuser   10148 Aug  8 03:22 /opt/bot-s1/logs/orders.log
+-rw-rw-r-- 1 botuser botuser     342 Aug  7 19:28 /opt/bot-s1/logs/strategy.log
+-rw-rw-r-- 1 botuser botuser       0 Aug  7 09:17 /opt/bot-s1/logs/trade.log
+-rw-r--r-- 1 botuser botuser  182143 Aug  8 03:24 /opt/bot-s1/logs/wallet.log
+-rw-rw-r-- 1 botuser botuser  164258 Aug  8 03:14 /opt/bot-s1/logs/websocket.log
+
+================ LOG TAILS (redacted, last 15 each) ================
+----- tail /opt/bot-s1/logs/orders.log -----
+2026-08-07T19:28:04.056+00:00 INFO    polybot.orders | order manager started | dry_run=True
+2026-08-07T19:28:04.057+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000007 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.01 size=166.0 type=GTC
+2026-08-07T19:28:04.057+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000008 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.01 size=166.0 type=GTC
+2026-08-07T19:28:04.058+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000009 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.02 size=83.0 type=GTC
+2026-08-07T19:28:04.058+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000010 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.02 size=83.0 type=GTC
+2026-08-07T19:28:04.058+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000011 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.03 size=55.0 type=GTC
+2026-08-07T19:28:04.058+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000012 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.03 size=55.0 type=GTC
+2026-08-07T19:28:45.350+00:00 INFO    polybot.orders | order manager started | dry_run=True
+2026-08-08T03:22:47.694+00:00 INFO    polybot.orders | order manager started | dry_run=True
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000065 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.01 size=166.0 type=GTC
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000066 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.01 size=166.0 type=GTC
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000067 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.02 size=83.0 type=GTC
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000068 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.02 size=83.0 type=GTC
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000069 exchange_id=None market=0xTESTMARKET side=up action=BUY price=0.03 size=55.0 type=GTC
+2026-08-08T03:22:47.695+00:00 INFO    polybot.orders | SIMULATED order (dry-run) | client_id=c00000070 exchange_id=None market=0xTESTMARKET side=down action=BUY price=0.03 size=55.0 type=GTC
+----- tail /opt/bot-s1/logs/dashboard-audit.log -----
+2026-08-07T19:56:09+00:00 action=backup_db result={'ok': True, 'msg': 'backup -> /opt/bot-s1/state/dashboard-backup-1786132569.db'}
+2026-08-07T21:19:59+00:00 action=__readonly_audit_probe__ result={'ok': False, 'msg': 'unknown action: __readonly_audit_probe__'}
+----- tail /opt/bot-s1/logs/trade.log -----
+----- tail /opt/bot-s1/logs/strategy.log -----
+2026-08-07T09:17:54.749+00:00 INFO    polybot.strategy | strategy runner started | strategy=1c_buy interval_s=1.0
+2026-08-07T19:16:03.946+00:00 INFO    polybot.strategy | strategy runner started | strategy=1c_buy interval_s=1.0
+2026-08-07T19:28:45.361+00:00 INFO    polybot.strategy | strategy runner started | strategy=1c_buy interval_s=1.0
+----- tail /opt/bot-s1/logs/audit/orders.log -----
+2026-08-07T09:19:00.159+00:00 INFO    polybot.orders | recovered live orders | count=0
+2026-08-07T09:19:00.769+00:00 INFO    polybot.orders | order manager started | dry_run=False
+2026-08-07T09:19:01.445+00:00 ERROR   polybot.orders | order submission failed | client_id=c00000001 exchange_id=None market=0x0b4cc3…REDACTED_LONG_HEX side=up action=BUY price=0.01 size=166.0 type=GTC error="RetryError('post_order failed after 1 attempts')"
+2026-08-07T09:19:01.466+00:00 INFO    polybot.orders | cancelled all open orders
+2026-08-07T18:15:51.448+00:00 INFO    polybot.orders | recovered live orders | count=0
+2026-08-07T18:15:52.078+00:00 INFO    polybot.orders | order manager started | dry_run=False
+2026-08-07T18:15:52.776+00:00 ERROR   polybot.orders | order submission failed | client_id=c00000001 exchange_id=None market=0x0b4cc3…REDACTED_LONG_HEX side=up action=BUY price=0.01 size=166.0 type=GTC error="RetryError('post_order failed after 1 attempts')"
+2026-08-07T18:15:52.801+00:00 INFO    polybot.orders | cancelled all open orders
+2026-08-07T18:17:11.484+00:00 INFO    polybot.orders | recovered live orders | count=0
+2026-08-07T18:17:12.093+00:00 INFO    polybot.orders | order manager started | dry_run=False
+2026-08-07T18:17:12.775+00:00 ERROR   polybot.orders | order submission failed | client_id=c00000001 exchange_id=None market=0x0b4cc3…REDACTED_LONG_HEX side=up action=BUY price=0.01 size=166.0 type=GTC error="RetryError('post_order failed after 1 attempts')"
+2026-08-07T18:17:12.796+00:00 INFO    polybot.orders | cancelled all open orders
+----- tail /opt/bot-s1/logs/audit/trade.log -----
+----- tail /opt/bot-s1/logs/audit/strategy.log -----
+----- tail /opt/bot-s1/logs/audit/websocket.log -----
+2026-08-07T09:19:00.309+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=market url=wss://ws-subscriptions-clob.polymarket.com/ws/market
+2026-08-07T09:19:00.315+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=user url=wss://ws-subscriptions-clob.polymarket.com/ws/user
+2026-08-07T18:15:51.612+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=user url=wss://ws-subscriptions-clob.polymarket.com/ws/user
+2026-08-07T18:15:51.616+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=market url=wss://ws-subscriptions-clob.polymarket.com/ws/market
+2026-08-07T18:17:11.636+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=market url=wss://ws-subscriptions-clob.polymarket.com/ws/market
+2026-08-07T18:17:11.644+00:00 INFO    polybot.websocket | ws connected + subscribed | channel=user url=wss://ws-subscriptions-clob.polymarket.com/ws/user
+
+================ SECRET LEAK SCAN (logs/html/json — count only, no values) ================
+/opt/bot-s1/logs/audit/orders.log
+/opt/bot-s1/logs/audit/errors.log
+/opt/bot-s1/logs/audit/execution.log
+/opt/bot-s1/logs/errors.log
+/opt/bot-s1/logs/execution.log
+/opt/bot-s1/data/live/logs/execution.log
+/opt/bot-s1/data/paper/logs/execution.log
+
+================ GIT STATE ================
+NOT a git repo
+
+================ DONE ================

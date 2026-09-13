@@ -1,0 +1,58 @@
+[Unit]
+Description=Polybot paper trading engine (simulated money, real order books)
+Documentation=file:///opt/polybot/Docs/DASHBOARD.md
+After=network-online.target
+Wants=network-online.target
+
+# Crash-loop protection belongs to the unit, not the service section.
+# Give up only if it is crash-looping: 6 restarts inside 5 minutes.
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=polybot
+Group=polybot
+WorkingDirectory=/opt/polybot
+ExecStart=/opt/polybot/.venv/bin/python /opt/polybot/run_paper.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+
+# The paper engine must never see a wallet credential. It also scrubs these from
+# its own environment at startup; this is the second line of defence.
+Environment=PYTHONUNBUFFERED=1
+Environment=ENABLE_LIVE_TRADING=false
+UnsetEnvironment=POLYMARKET_PRIVATE_KEY POLYMARKET_PROXY_ADDRESS POLY_API_KEY POLY_API_SECRET POLY_API_PASSPHRASE POLY_BUILDER_API_KEY POLY_BUILDER_SECRET POLY_BUILDER_PASSPHRASE
+
+# --- sandboxing -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Only the paper data tree is writable — it cannot touch live state.
+ReadWritePaths=/opt/polybot/data/paper
+
+# --- resource ceilings (2 vCPU / 4 GB VPS) ----------------------------------
+MemoryMax=600M
+MemoryHigh=450M
+CPUQuota=60%
+TasksMax=96
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-paper
+
+[Install]
+WantedBy=multi-user.target

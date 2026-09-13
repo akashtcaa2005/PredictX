@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Polybot — Trading Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%235b9dff'/></svg>">
+</head>
+<body class="locked">
+
+<!-- ============================ Login ============================ -->
+<section id="login">
+  <form class="card" id="login-form" autocomplete="on">
+    <h1>Polybot</h1>
+    <div class="sub">Polymarket trading control plane</div>
+
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+
+    <div class="error-text" id="login-error" role="alert" aria-live="polite"></div>
+    <button class="btn primary wide" type="submit" id="login-btn">Sign in</button>
+  </form>
+</section>
+
+<!-- ============================ App ============================ -->
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="conn-dot"></span>
+      <span>Polybot</span>
+      <small id="version-tag"></small>
+    </div>
+
+    <div class="mode-switch" role="group" aria-label="Trading mode">
+      <button data-mode="paper" class="active">Paper</button>
+      <button data-mode="live">Live</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <span class="status-chip hide-sm" id="chip-engine"><i class="led"></i><span>engine</span></span>
+    <span class="status-chip hide-sm" id="chip-api"><i class="led"></i><span>API</span></span>
+    <span class="status-chip hide-sm" id="chip-ws"><i class="led"></i><span>WS</span></span>
+    <span class="status-chip" id="chip-clock">--:--:--</span>
+
+    <button class="icon-btn" id="btn-theme" title="Toggle light / dark">◐</button>
+    <button class="icon-btn" id="btn-bell" title="Notifications">
+      🔔<span class="badge" id="notif-badge" hidden>0</span>
+    </button>
+    <button class="icon-btn" id="btn-user" title="Account"><span id="user-label">—</span></button>
+  </header>
+
+  <div class="shell">
+    <nav class="sidebar" id="nav"></nav>
+    <main id="main"></main>
+  </div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="modal" role="dialog" aria-modal="true"><div class="card" id="modal-body"></div></div>
+
+<script src="/static/charts.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

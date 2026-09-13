@@ -1,0 +1,1563 @@
+[
+ {
+  "lane": "safety",
+  "component": "Live Safety",
+  "analyze": {
+   "lane": "safety",
+   "component": "Live Safety",
+   "component_status": "FAIL",
+   "summary": "Fund-safety ENFORCEMENT is strong and honest: dry-run is the default, live orders are short-circuited to \"simulated\" in OrderManager, live-mode startup gates (maker/allowance/balance) and the risk engine (daily-loss, exposure, position, open-order, concurrency, cooldown, kill-switch/emergency-stop) all raise/halt before real orders, emergency-stop + kill-switch are wired and authenticated (401 + CSRF, verified in EVIDENCE), and the dashboard has NO code path to set ENABLE_LIVE_TRADING or edit env.txt. Two real gaps against the spec: (1) the explicitly-named \"MOST IMPORTANT REQUIREMENT\" \u2014 the LIVE READINESS panel \u2014 is materially incomplete: TradingReadiness reports only 6 of the ~14 mandated checks (missing geographic availability, market active, market accepting orders, strategy loaded, risk-halt/limits, explicit CLOB-connectivity, and the ENABLE_LIVE_TRADING flag itself), is computed once at engine startup and never refreshed, so live_ready is derived over an incomplete set and the panel could read \"LIVE READY = YES\" while geography/market/strategy/risk conditions are unmet; (2) the committed live systemd unit does NOT set ENABLE_LIVE_TRADING=false \u2014 the \"env.txt cannot arm live trading\" guarantee holds on the running box only because the deployed unit was hardened out-of-band (per EVIDENCE), and a redeploy from this source would silently lose that belt-and-suspenders control. No fabricated data was found; the readiness gate is honest about what it checks and is currently conservative (NO). Component marked FAIL because the spec's most-important requirement is not fully met, though no funds are presently at risk given the enforcement gates and the hardened running unit.",
+   "findings": [
+    {
+     "id": "SAFETY-001",
+     "phase": "Phase 5 / Phase 17 / final safety list (MOST IMPORTANT REQUIREMENT)",
+     "title": "LIVE READINESS panel checks only 6 of the ~14 mandated requirements",
+     "severity": "FAIL",
+     "spec_requirement": "LIVE READINESS panel must check ALL of: CLOB connectivity, authentication, wallet, deposit wallet, USDC balance, allowance, trading enabled, market active, market accepting orders, strategy loaded, risk checks, geographic availability, live trading flag \u2014 and return LIVE READY only when every mandatory requirement passes, listing exact blockers otherwise.",
+     "observed": "polybot/wallet/readiness.py TradingReadiness.evaluate() populates only six checks: authentication, not_closed_only, maker_wallet, usdc_allowance, deposit_wallet_enabled, usdc_balance. live_ready is computed as `not missing` over ONLY those six (readiness.py:135). Absent entirely: geographic availability (no geo/region check exists anywhere in the codebase \u2014 grep for geo/region/country/geoblock finds only error-string handling in scripts/live_execution_audit.py), market active, market accepting orders (market_feed.py has an accepting_orders field but readiness never consults it), strategy loaded (startup loads/aborts on it in main.py:198-205 but it is not reported in readiness), risk checks / halt state, explicit CLOB connectivity as its own verdict, and the ENABLE_LIVE_TRADING live-trading flag itself. The report is produced once at engine startup (polybot/main.py:190) and the dashboard readiness card (dashboard/static/app.js:491-517, dashboard/engine_view.py:58-74) merely renders the readiness.json file as-is and never recomputes or augments it, so it is also a stale startup snapshot for the time-varying items (market active/accepting).",
+     "evidence": "polybot/wallet/readiness.py:52-154 (six checks; live_ready=not missing at :135); polybot/main.py:182-196 (evaluate() called only during startup()); dashboard/engine_view.py:58-74 (reads state/readiness.json, no recompute); dashboard/static/app.js:491-517 (renders checks/missing verbatim); grep confirms no geographic/market-active/strategy-loaded/risk/ENABLE_LIVE_TRADING entries in the readiness report.",
+     "gap": "Because live_ready is derived over an incomplete check set, the panel can report LIVE READY = YES while geographic access is blocked, no market is active or accepting orders, the strategy failed to load, or the risk engine is halted; the spec's most-important safety verdict is therefore not authoritative.",
+     "proposed_fix": "Extend TradingReadiness (or add a live dashboard-side aggregator that also reads engine heartbeat/registry) to evaluate and report every mandated requirement as its own check with an explicit blocker string: CLOB reachable (dedicated health() probe), geographic availability (probe CLOB from the live region / catch 403 geoblock), each configured market's active + acceptingOrders (from market registry / gamma), strategy loaded (from startup_info), risk-engine not halted and limits configured, and the ENABLE_LIVE_TRADING flag state. Compute live_ready over the full set and re-evaluate on a schedule (not just at startup) so time-varying items are current.",
+     "confidence": 0.9,
+     "fix_risk": "medium"
+    },
+    {
+     "id": "SAFETY-002",
+     "phase": "Phase 5 / Phase 17 (live safety gate)",
+     "title": "Committed live systemd unit does not set ENABLE_LIVE_TRADING=false; env.txt-cannot-arm guarantee is not in source",
+     "severity": "WARN",
+     "spec_requirement": "ENABLE_LIVE_TRADING=false cannot be bypassed; live trading cannot be armed via env.txt while the unit forces the flag off.",
+     "observed": "deploy/systemd/polybot-live.service (lines 21-24) sets only Environment=PYTHONUNBUFFERED=1 plus a comment stating the flag is deliberately left unset so env.txt is the control knob ('Live trading stays OFF until you deliberately set ENABLE_LIVE_TRADING=true in env.txt'). deploy/install.sh:99-103 copies the unit verbatim (only path/User/Group sed substitutions), so it never injects the flag. Because load_env_file uses override=False (polybot/config/settings.py:37,57), the process-env override only protects when the UNIT sets ENABLE_LIVE_TRADING=false; with the committed unit it does not, so a value in env.txt (or an inherited export) directly determines enable_live_trading. Per EVIDENCE the RUNNING VPS unit and /proc/<pid>/environ DO contain ENABLE_LIVE_TRADING=false, i.e. the deployed unit was hardened out-of-band and no longer matches this source.",
+     "evidence": "deploy/systemd/polybot-live.service:21-24; deploy/install.sh:99-103; polybot/config/settings.py:37,57 (override=False) and :252 (_get_bool('ENABLE_LIVE_TRADING', False)); EVIDENCE.md lines 22-24 (running unit hardcodes false).",
+     "gap": "A reinstall/redeploy from this source, or any resync of the unit file, silently removes the process-env override; thereafter editing env.txt to ENABLE_LIVE_TRADING=true would arm live trading (subject only to the startup allowance/balance gates), and a dashboard 'start live' would then launch a funded session. The audited safety guarantee lives only in manual VPS state, not in version control.",
+     "proposed_fix": "Add `Environment=ENABLE_LIVE_TRADING=false` to deploy/systemd/polybot-live.service (and bot-s1.service if retained) so the process env always overrides env.txt, matching the hardened running configuration; keep env.txt=true as an additional, not sole, requirement \u2014 or gate live arming behind an explicit second file/flag the unit controls.",
+     "confidence": 0.85,
+     "fix_risk": "low"
+    },
+    {
+     "id": "SAFETY-003",
+     "phase": "Phase 5 (dry-run enforcement)",
+     "title": "Dry-run enforcement chain from config to order submission is correct",
+     "severity": "PASS",
+     "spec_requirement": "The live trading flag must be read in config and enforced on the order path so no real order is submitted unless explicitly armed.",
+     "observed": "enable_live_trading is read once (settings.py:252, default False) and exposed via the dry_run property (settings.py:207-210). It is passed to OrderManager as dry_run=s.dry_run (main.py:248). In dry-run, OrderManager._submit short-circuits to order.simulated=True / status LIVE and never calls exchange.place_order (manager.py:173-184); _cancel_market, cancel_order, poll, recover and cancel_all are all guarded by _dry_run (manager.py:237,254,280,377,413). Startup logs and records the mode honestly (main.py:88-98).",
+     "evidence": "polybot/config/settings.py:207-210,252; polybot/main.py:248; polybot/orders/manager.py:173-184,237,254,280,377,413.",
+     "gap": "",
+     "proposed_fix": "",
+     "confidence": 0.97,
+     "fix_risk": "none"
+    },
+    {
+     "id": "SAFETY-004",
+     "phase": "Phase 17 (live-mode startup gates)",
+     "title": "Live-mode startup gates (maker/deposit wallet, allowance, balance) abort before any order is signed",
+     "severity": "PASS",
+     "spec_requirement": "Live trading must be blocked when the wallet is not authorized / not funded / lacks allowance.",
+     "observed": "In live mode, MakerWalletValidator.validate raises MakerWalletError (maker.py:143-148, self._live) and AllowanceManager.verify raises AllowanceError via _fail (allowance.py:124-133, self._live), each caught in main.py (124-127, 171-174) and re-raised as StartupError; balance failure also aborts in live mode (main.py:135-140). main() converts StartupError/ConfigError to exit code 2 with no components wired, so no order path exists (main.py:436-445). These match EVIDENCE (usdc_allowance ok=false, deposit_wallet_enabled ok=false, balance 0<1 \u2192 live_ready=false).",
+     "evidence": "polybot/wallet/maker.py:143-152; polybot/wallet/allowance.py:70-133; polybot/main.py:124-140,171-174,436-445.",
+     "gap": "",
+     "proposed_fix": "",
+     "confidence": 0.95,
+     "fix_risk": "none"
+    },
+    {
+     "id": "SAFETY-005",
+     "phase": "Phase 17 (risk engine gates)",
+     "title": "Risk engine enforces daily-loss, exposure, position, order-count, concurrency, cooldown and global halts",
+     "severity": "PASS",
+     "spec_requirement": "Risk engine must gate daily loss limit, max exposure and support halts.",
+     "observed": "RiskEngine.check_order enforces halt (engine.py:101-102), daily loss with auto emergency_stop (105-108), per-order value (111-112), max open orders (115-116), max concurrent markets (119-123), cooldown (126-129), max position size (133-135), total exposure incl. open-order notional (137-141), and wallet funds (143-144). record_fill folds realized PnL and trips emergency_stop at the daily-loss limit (152-158). is_halted honors both the in-memory emergency stop and the on-disk kill switch (68-75). Daily-loss limit 50 matches the EVIDENCE heartbeat.",
+     "evidence": "polybot/risk/engine.py:61-176; EVIDENCE.md line 27 (daily_loss_limit=50, risk.halted=false).",
+     "gap": "",
+     "proposed_fix": "",
+     "confidence": 0.95,
+     "fix_risk": "none"
+    },
+    {
+     "id": "SAFETY-006",
+     "phase": "Phase 17 (emergency stop / kill switch)",
+     "title": "Emergency-stop / kill-switch mechanism exists, is fail-safe, and is authenticated",
+     "severity": "PASS",
+     "spec_requirement": "An authenticated emergency stop / kill-switch must exist and actually halt trading.",
+     "observed": "The engine's _guard_loop cancels all open orders when risk.is_halted() flips (main.py:346-359); is_halted reads the kill-switch file (engine.py:71-74). The dashboard emergency_stop writes the KILL_SWITCH file first, waits, then stops the unit, so the running engine cancels its own resting orders (control.py:152-182). Kill-switch paths are consistent across writer and reader (control.kill_switch_path = engine_state(mode)/'KILL_SWITCH'; paths.py:60 kill_switch = data/<mode>/state/KILL_SWITCH; RiskEngine default settings.kill_switch_file). Endpoints /api/control/emergency-stop, /clear-kill-switch and /service require an authenticated session and pass _authorise_write (permission + CSRF) (server.py:531-574,680-689); EVIDENCE confirms 401 unauthenticated. Clearing the switch requires an authenticated action and a service start to resume \u2014 fail-safe (stays halted otherwise).",
+     "evidence": "polybot/main.py:346-359; polybot/risk/engine.py:68-90; dashboard/control.py:146-194; dashboard/server.py:531-574,680-689; polybot/config/paths.py:60; EVIDENCE.md line 29.",
+     "gap": "",
+     "proposed_fix": "",
+     "confidence": 0.93,
+     "fix_risk": "none"
+    },
+    {
+     "id": "SAFETY-007",
+     "phase": "Phase 17 (dashboard cannot arm live)",
+     "title": "Dashboard has no code path that enables live trading",
+     "severity": "PASS",
+     "spec_requirement": "Live trading cannot be enabled by the dashboard; no code path silently sets the flag true.",
+     "observed": "The control plane maps a logical target to a fixed unit name and only ever issues systemctl start/stop/restart (ALLOWED_ACTIONS, control.py:30,69-124); no shell, no arbitrary argv. No file in dashboard/ writes ENABLE_LIVE_TRADING or env.txt (grep for env.txt writes / ENABLE_LIVE_TRADING in dashboard/ returns nothing). The sudoers rule is scoped to exactly three units \u00d7 three verbs (polybot-dashboard.sudoers:11-36). Starting polybot-live.service only launches run.py, which is dry-run unless ENABLE_LIVE_TRADING=true is present in its environment \u2014 a value the dashboard cannot set. The only os.environ write of the flag anywhere is scrub_wallet_secrets forcing it to 'false' (settings.py:83) and the standalone audit script (not run automatically per EVIDENCE).",
+     "evidence": "dashboard/control.py:30,69-124; deploy/polybot-dashboard.sudoers:11-36; polybot/config/settings.py:83; grep of dashboard/ for ENABLE_LIVE_TRADING/env.txt writes (empty).",
+     "gap": "",
+     "proposed_fix": "",
+     "confidence": 0.9,
+     "fix_risk": "none"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "SAFETY-001",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "Verified against source: TradingReadiness.evaluate() (readiness.py:52-154) populates exactly six checks \u2014 authentication, not_closed_only, maker_wallet, usdc_allowance, deposit_wallet_enabled, usdc_balance \u2014 and computes live_ready=`not missing` over only those six (readiness.py:135). No geographic-availability check exists anywhere (grep for geo/region/country/geoblock returns only scripts/live_execution_audit.py:66-67 error-string handling and dashboard/server.py:148 Permissions-Policy header). accepting_orders / market-active are modeled in exchange/market_registry.py:34,91 and telemetry/publisher.py:175 but readiness never consults them. Strategy load is enforced at main.py:198-205 but not surfaced in the readiness report; risk-halt state, explicit CLOB-connectivity verdict, and the ENABLE_LIVE_TRADING flag are all absent from the report. evaluate() is called only once at startup (main.py:189-190); dashboard/engine_view.py:58-74 just reads readiness.json and adds _file_ts (no recompute), and dashboard/static/app.js:491-517 renders checks/missing verbatim, so time-varying items (market active/accepting) are a stale startup snapshot. FAIL is appropriate: an explicit spec requirement (panel must check ALL ~14 mandated requirements and only report LIVE READY when every one passes) is materially incomplete, and live_ready=YES can be emitted without ever verifying geographic availability, the live-trading flag, or current market-accepting status.",
+     "evidence": "readiness.py:52-154 (6 checks; live_ready=not missing at :135); main.py:189-190 (evaluate only at startup); engine_view.py:58-74 (reads json, no recompute); app.js:491-517 (verbatim render); market_registry.py:34,91 + publisher.py:175 (accepting_orders exists but unused by readiness); grep geo -> only live_execution_audit.py:66-67 and server.py:148"
+    },
+    {
+     "id": "SAFETY-002",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified against source: deploy/systemd/polybot-live.service sets only Environment=PYTHONUNBUFFERED=1 (line 21) and lines 22-24 are a comment stating the flag is deliberately left unset so env.txt is the control knob \u2014 the committed LIVE unit does NOT set ENABLE_LIVE_TRADING=false. Notably the PAPER unit does (deploy/systemd/polybot-paper.service:24 Environment=ENABLE_LIVE_TRADING=false), confirming the pattern exists and its omission in the live unit is a real gap, not an oversight of the mechanism. deploy/install.sh:99-103 copies the unit with only path/User/Group sed substitutions, so it never injects the flag. settings.load_env_file uses override=False (settings.py:37,57: `if override or key not in os.environ`) and enable_live_trading=_get_bool('ENABLE_LIVE_TRADING', False) at settings.py:252, so when the unit does not set the flag, a value in env.txt (or an inherited export) directly determines enable_live_trading \u2014 i.e. env.txt CAN arm live trading from committed source. EVIDENCE.md:21-24 confirms the RUNNING VPS unit hardcodes false, meaning the deployed unit was hardened out-of-band and no longer matches source. WARN (not FAIL) is correct: the running system is hardened + dry-run, and additional gates (zero allowance/balance startup blocks, readiness not-ready) still prevent real orders even if the flag were armed; the defect is a latent source/deployment drift that would remove the guarantee on a from-source redeploy, not an active bypass. (Note: the finding's reference to bot-s1.service is out of scope for source \u2014 no bot-s1.service exists under deploy/systemd/; it is a legacy VPS-only unit.)",
+     "evidence": "polybot-live.service:21-24 (no ENABLE_LIVE_TRADING env, comment only); polybot-paper.service:24 (paper unit DOES set false); install.sh:99-103 (verbatim copy, sed path/User/Group only); settings.py:37,57 (override=False),:252 (_get_bool default False); EVIDENCE.md:21-24 (running unit hardcodes false)"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "paper",
+  "component": "Paper Isolation",
+  "analyze": {
+   "lane": "paper",
+   "component": "Paper Isolation",
+   "component_status": "WARN",
+   "summary": "Paper trading isolation is implemented correctly and defensibly. The paper engine is physically incapable of submitting live orders: order writes are wired to PaperExchange (an in-process simulator that never calls the CLOB submit path), while the only CLOB client it constructs (build_public_reader) is keyless/credential-less and used solely for read-only public market data. Wallet secrets are scrubbed from os.environ in code at two points (Settings.load mode=paper and paper/main.startup), not just via the systemd UnsetEnvironment directive, and ENABLE_LIVE_TRADING is forced false. Paper uses REAL public books but simulates fills/partials/latency/slippage/fees, and writes only to the isolated data/paper tree. Dashboard control maps logical target->fixed unit with no crossover. One WARN: the committed deploy/systemd/polybot-paper.service references /opt/polybot and User=polybot, which does not match the documented deployment (/opt/bot-s1, botuser per EVIDENCE), so the ReadWritePaths/sandbox guarantees cannot be fully verified from the mirrored source and redeploying it verbatim would break paper startup. No live-order leak path found.",
+   "findings": [
+    {
+     "id": "PAPER-01",
+     "phase": "4/16",
+     "title": "Paper engine physically cannot submit live orders (simulator adapter, keyless reader)",
+     "severity": "PASS",
+     "spec_requirement": "Paper engine is PHYSICALLY incapable of submitting live orders (separate exchange adapter; no auth/signing path).",
+     "observed": "OrderManager is wired to self.exchange = PaperExchange (polybot/paper/main.py:175, :124), not to the CLOB client. PaperExchange.place_order (polybot/paper/exchange.py:146-184) only inserts a PaperOrder into an in-memory dict and matches against real depth in match()/_match_one (:257-335); it never calls reader.place_order/post_order. The sole CLOB client is build_public_reader (main.py:40-64) constructed as client_cls(host, chain_id) with NO private key and NO API creds, so ClobExchange.place_order's create_order/post_order (clob.py:106-126) has no signer and cannot sign. The reader is passed only to MarketRegistry (main.py:123) and as PaperExchange's read delegate (main.py:125); it is never handed to OrderManager or Broker.",
+     "evidence": "polybot/paper/main.py:40-64,115,123-125,175; polybot/paper/exchange.py:146-184,257-335; polybot/exchange/clob.py:106-126",
+     "confidence": 0.97
+    },
+    {
+     "id": "PAPER-02",
+     "phase": "4/16",
+     "title": "Wallet secrets scrubbed from process env in code, not just in the unit",
+     "severity": "PASS",
+     "spec_requirement": "Verify env scrubbing at startup in code (not just the unit UnsetEnvironment); paper cannot access private keys / live API creds.",
+     "observed": "scrub_wallet_secrets() (polybot/config/settings.py:79-84) pops all 10 WALLET_SECRET_ENV vars (:65-77: private key, proxy address, POLY_API_* and POLY_BUILDER_*) from os.environ and forces ENABLE_LIVE_TRADING=false. It is invoked in code twice: inside Settings.load when mode=='paper' (settings.py:222-223) BEFORE credentials are read into the Settings dataclass (so settings.private_key resolves to ''), and again defensively at PaperTradingBot.startup (paper/main.py:110). Even a misconfigured env file pointing at live secrets is neutralised because load_env_file runs then scrub immediately pops them, and the reader is keyless regardless. Confirmed by tests test_scrub_removes_every_wallet_variable and test_paper_settings_never_carry_a_key (tests/test_paper_offline.py:186-218).",
+     "evidence": "polybot/config/settings.py:65-84,222-223,234-235; polybot/paper/main.py:110; deploy/systemd/polybot-paper.service:25; tests/test_paper_offline.py:186-218",
+     "confidence": 0.97
+    },
+    {
+     "id": "PAPER-03",
+     "phase": "4/16",
+     "title": "Real public book data with simulated fills/partials/latency/slippage/fees",
+     "severity": "PASS",
+     "spec_requirement": "Paper uses REAL public market/order-book data but SIMULATES fills/partials/latency/slippage/fees.",
+     "observed": "Depth comes from the real public CLOB via websocket (main.py:_on_market_event:222-230) and a REST backstop refresh loop (main.py:263-279 -> exchange.refresh_depth:129-135 -> reader.get_order_book). Matching is fully simulated: latency gating via created_ts<=now-latency (exchange.py:264,270); partial fills via maker_fill_ratio (:294-295); slippage in ticks applied against the taker (:283-307); fees on notional via fee_bps (:324,337-350); liquidity consumed within a pass so competing orders fill in sequence (:266-321). Each behaviour is unit-tested (tests/test_paper_offline.py:104-141,163-171).",
+     "evidence": "polybot/paper/exchange.py:129-135,257-358; polybot/paper/main.py:222-230,263-279; tests/test_paper_offline.py:104-171",
+     "confidence": 0.95
+    },
+    {
+     "id": "PAPER-04",
+     "phase": "4/16",
+     "title": "Separate data/paper tree for db/logs/state/kill-switch; no overlap with live",
+     "severity": "PASS",
+     "spec_requirement": "Separate data/paper/{db,logs,state,positions,orders,trades,portfolio,risk,strategy}.",
+     "observed": "mode_paths('paper') (polybot/config/paths.py:46-61) roots everything at DATA_ROOT/paper: logs, state, engine.db, KILL_SWITCH, and env_file=env.paper.txt (distinct from live's env.txt). Settings defaults derive db_path/log_dir/state_dir/kill_switch from mode_paths (settings.py:191-196). The paper recorder writes settings.db_path (paper) and _restore_positions reads it read-only (main.py:81,204-217). Orders/trades/positions/portfolio/risk/strategy all live inside that single engine.db per the telemetry schema. Non-overlap is asserted by test_paper_and_live_paths_never_overlap (tests/test_paper_offline.py:221-228). EVIDENCE confirms separate data/{live,paper} trees on disk.",
+     "evidence": "polybot/config/paths.py:46-61; polybot/config/settings.py:191-196; polybot/paper/main.py:81,204-217; tests/test_paper_offline.py:221-228",
+     "confidence": 0.95
+    },
+    {
+     "id": "PAPER-05",
+     "phase": "4/16",
+     "title": "Dashboard control maps logical target to a fixed distinct unit; no cross-control",
+     "severity": "PASS",
+     "spec_requirement": "Paper controls never call the live unit and vice versa (dashboard/control.py unit mapping).",
+     "observed": "unit_for (dashboard/control.py:69-74) maps paper->paper_unit, live->live_unit, dashboard->dashboard_unit from DashboardSettings, whose defaults are the three distinct .service names (dashboard/config.py:80-82,174-176). service_action/_run_systemctl build argv from the allowlisted action + resolved unit with shell=False (control.py:76-124); emergency_stop routes through service_action(mode,'stop') keeping the mode->unit binding intact (control.py:152-182). No caller string reaches a shell and there is no path where a paper request resolves to the live unit. (Only residual risk: operator could set PAPER_UNIT/LIVE_UNIT env to the same value, config-driven, defaults safe.)",
+     "evidence": "dashboard/control.py:69-124,152-182; dashboard/config.py:80-82,174-176,252-253",
+     "confidence": 0.9
+    },
+    {
+     "id": "PAPER-06",
+     "phase": "4/16",
+     "title": "Paper imports CLOB client for read-only public data only",
+     "severity": "PASS",
+     "spec_requirement": "Does paper import the CLOB client only for READ-ONLY public data? Confirm paper/exchange.py has no order-submit capability.",
+     "observed": "build_public_reader (main.py:40-64) is the only place a real ClobClient is instantiated in the paper process, keyless/credential-less, and only its read methods are exercised (health/get_market/get_order_book/get_tick_size/best_bid_ask). PaperExchange delegates ONLY reads to the reader (exchange.py:101-135) and implements order entry/cancel/match entirely in-process (:146-358). PaperExchange.address() returns literal 'paper' (:107-108) and get_collateral_allowances returns {'paper': inf} (:247-249) \u2014 no on-chain/auth call. There is no submit/sign capability against the live venue anywhere in paper/exchange.py.",
+     "evidence": "polybot/paper/main.py:40-64,116; polybot/paper/exchange.py:98-135,146-358",
+     "confidence": 0.96
+    },
+    {
+     "id": "PAPER-07",
+     "phase": "16",
+     "title": "Committed paper systemd unit paths/user diverge from documented deployment",
+     "severity": "WARN",
+     "spec_requirement": "The paper unit must confine writes to the paper data tree (ReadWritePaths) and match the deployed environment so sandbox guarantees are verifiable.",
+     "observed": "deploy/systemd/polybot-paper.service uses WorkingDirectory=/opt/polybot, ExecStart=/opt/polybot/.venv/bin/python /opt/polybot/run_paper.py, User/Group=polybot, and ReadWritePaths=/opt/polybot/data/paper. EVIDENCE.md states the real project is at /opt/bot-s1 owned by botuser, and polybot-paper.service was previously running (NRestarts=0). This means the committed unit is a template that does not match the live deployment, so the ProtectSystem=strict + ReadWritePaths isolation guarantee cannot be confirmed from source. If this file were re-deployed verbatim, paper would either fail to start (path missing) or, with strict fs protection, be unable to write its own data/paper tree. This is a deployment-drift/verifiability gap, not a live-order-leak (the failure mode is fail-closed).",
+     "evidence": "deploy/systemd/polybot-paper.service:11-12,25,43; audit/findings/EVIDENCE.md:7,13-16",
+     "confidence": 0.6,
+     "gap": "Mirrored unit references /opt/polybot & user polybot; deployment is /opt/bot-s1 & botuser.",
+     "proposed_fix": "Reconcile the committed unit with the deployed one: parameterise the install path (or set it to /opt/bot-s1), correct User/Group and ReadWritePaths to the real data tree, and add the actual deployed unit to the repo so the sandbox/isolation directives are auditable and reproducible.",
+     "fix_risk": "low"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "PAPER-07",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Independently confirmed from source: all three committed units (polybot-paper/live/dashboard) uniformly reference /opt/polybot and User/Group=polybot, whereas EVIDENCE.md establishes the live deployment is /opt/bot-s1 owned by botuser and the paper service had actually been running (NRestarts=0) under the deployed unit. The committed paper unit is therefore a template that does not match the running environment, so its ProtectSystem=strict + ReadWritePaths=/opt/polybot/data/paper isolation guarantee cannot be verified against the live system, and a verbatim re-deploy fails closed (ExecStart interpreter /opt/polybot/.venv/bin/python does not exist -> service won't start; no live-order-leak path). This is a genuine deployment-drift/verifiability gap. WARN is the correct severity for a production isolation/reproducibility issue that is fail-closed rather than a safety leak. Only nit: User/Group are lines 9-10 not the cited 25 (line 25 is UnsetEnvironment), immaterial to the finding.",
+     "evidence": "deploy/systemd/polybot-paper.service:9-12,43 (/opt/polybot paths, User/Group=polybot, ReadWritePaths=/opt/polybot/data/paper); identical /opt/polybot+polybot pattern in polybot-live.service:9-12,41 and polybot-dashboard.service:9-12,39,42; EVIDENCE.md:7 (project at /opt/bot-s1 owned by botuser), EVIDENCE.md:13-16 (polybot-paper.service was running, NRestarts=0)"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "clobv2",
+  "component": "CLOB V2",
+  "analyze": {
+   "lane": "clobv2",
+   "component": "CLOB V2",
+   "component_status": "WARN",
+   "summary": "The CLOB V2 exchange layer is correctly and honestly migrated: py_clob_client_v2 is the only functional SDK dependency across auth/clob/wallet/websocket/registry, the v2 API surface is used correctly (get_open_orders, cancel_order(OrderPayload), OrderMarketCancelParams, BalanceAllowanceParams/AssetType, OrderArgs/PartialCreateOrderOptions, create_or_derive_api_key), retry/backoff is sane with order-post deliberately NOT retried, and all wallet checks are read-only and server-authoritative (proxy/EOA aware, no doomed on-chain approve). One confirmed defect underlies the known dashboard EAGAIN: ClobExchange dispatches SDK calls to threads via asyncio.to_thread with no serialization over a single non-thread-safe SDK client, and dashboard live_sync fans them out with asyncio.gather. Minor cleanups: loose version floor in requirements.txt and a dead/misleading v1 fallback in the paper public reader. No fabricated data found; absent quotes/allowances/balances resolve to 0.0/UNKNOWN and fail safe (block live).",
+   "findings": [
+    {
+     "id": "clobv2-01",
+     "phase": "Phase 2",
+     "title": "ClobExchange shares one non-thread-safe SDK client across concurrent to_thread calls (root cause of dashboard EAGAIN)",
+     "severity": "WARN",
+     "spec_requirement": "exchange/clob.py order/book/balance methods use v2 API surface correctly; retry/backoff sane (implies safe concurrency).",
+     "observed": "ClobExchange._call dispatches every SDK method to a worker thread via asyncio.to_thread with NO lock (clob.py:52-61). The underlying py_clob_client_v2 ClobClient wraps a single synchronous requests.Session/connection pool, which is not safe for concurrent use from multiple threads. dashboard/live_sync.py sync_once fans out _sync_health/_sync_balance/_sync_orders/_sync_trades(/positions/value) via asyncio.gather (live_sync.py:212-220), so 4-6 SDK calls run in parallel threads against the same session, producing the observed 'request error: [Errno 11] Resource temporarily unavailable' batches at identical timestamps. The live engine avoids it only because it happens to call these methods sequentially.",
+     "evidence": "polybot/exchange/clob.py:52-61 (no lock around asyncio.to_thread); dashboard/live_sync.py:212-220 (asyncio.gather over authenticated sync sections); EVIDENCE.md lines 57-70 (EAGAIN fingerprint).",
+     "proposed_fix": "Serialize authenticated SDK access: either add a single asyncio.Lock in ClobExchange._call so all to_thread dispatches are mutually exclusive per client, or change live_sync.sync_once to sequential awaits (mirroring the engine). Lock in _call is the minimal in-lane fix and protects any future concurrent caller.",
+     "fix_risk": "low",
+     "confidence": 0.85,
+     "gap": "Dashboard live panel (balance/allowances/orders/trades) can intermittently fail to refresh and show stale values; engine source-of-truth (data/live/engine.db) is unaffected."
+    },
+    {
+     "id": "clobv2-02",
+     "phase": "Phase 2",
+     "title": "requirements.txt uses a version floor, not a real pin, for the v2 SDK",
+     "severity": "WARN",
+     "spec_requirement": "requirements.txt pins py-clob-client-v2.",
+     "observed": "requirements.txt:4 declares 'py-clob-client-v2>=1.1.0'. This is a lower bound, not a pin; a future backward-incompatible 2.x release would satisfy it and could break the encapsulated v2 API surface (get_open_orders, OrderPayload, etc.). Runtime currently has exactly 1.1.0 (EVIDENCE.md line 35), so production is fine today.",
+     "evidence": "requirements.txt:4; EVIDENCE.md line 35 (py_clob_client_v2==1.1.0 installed).",
+     "proposed_fix": "Pin to 'py-clob-client-v2==1.1.0' (or '>=1.1.0,<2') and similarly bound eth-account/py-order-utils to avoid an unvetted major upgrade on a fresh install.",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "clobv2-03",
+     "phase": "Phase 2",
+     "title": "Dead/misleading v1 fallback in paper public-reader; ClobExchange hard-depends on v2",
+     "severity": "WARN",
+     "spec_requirement": "No functional dependency on old py-clob-client anywhere.",
+     "observed": "paper/main.py:51 iterates ('py_clob_client_v2.client','py_clob_client.client') and would construct a v1 ClobClient if v2 were absent. But ClobExchange.__init__ unconditionally executes 'from py_clob_client_v2 import AssetType, OrderType' and '...order_builder.constants import BUY, SELL' (clob.py:43-44), so a v1-only environment would crash at ClobExchange construction. The v1 branch can therefore never actually work \u2014 it is dead code that misleadingly implies v1 compatibility. Benign in production because only v2 is installed.",
+     "evidence": "polybot/paper/main.py:50-64; polybot/exchange/clob.py:43-44 (unconditional v2 imports); EVIDENCE.md line 37.",
+     "proposed_fix": "Drop the 'py_clob_client.client' fallback tuple entry (and the accompanying doc comment) so the code honestly reflects the hard v2-only dependency; error message should point only at py-clob-client-v2.",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "clobv2-04",
+     "phase": "Phase 2",
+     "title": "best_bid_ask/apply_book return 0.0 for a missing side (ambiguous with a real price)",
+     "severity": "INFO",
+     "spec_requirement": "Honest data: absence should be N/A/UNKNOWN rather than a fabricated value.",
+     "observed": "best_bid_ask uses max(...,default=0.0)/min(...,default=0.0) (clob.py:95-96) and apply_book does the same (market_registry.py:131-132), so an empty ask side yields best_ask=0.0. Callers must treat 0.0 as 'no quote'; the legacy dashboard _market() mid/spread guards on 'if bb and ba' (server.py:293-294), which correctly hides it. Low real-world risk because valid Polymarket prices are in (0,1] and 0 is not a tradeable ask.",
+     "evidence": "polybot/exchange/clob.py:90-103; polybot/exchange/market_registry.py:131-133.",
+     "proposed_fix": "Optionally return None (or a has_bid/has_ask flag) instead of 0.0 for an empty side so downstream cannot misread 0.0 as a real price; document invariant in the facade.",
+     "fix_risk": "low",
+     "confidence": 0.6
+    },
+    {
+     "id": "clobv2-05",
+     "phase": "Phase 2",
+     "title": "auth.py builds the v2 client correctly (L1/L2, signature_type, funder, BuilderConfig)",
+     "severity": "PASS",
+     "spec_requirement": "exchange/auth.py builds the v2 client correctly (L1/L2 creds, signature_type/POLY_PROXY, funder/maker wallet).",
+     "observed": "build_clob_client constructs ClobClient(host, chain_id, key, creds, signature_type, funder=proxy_address or None, builder_config) (auth.py:107-115), uses explicit ApiCreds when all three are present else create_or_derive_api_key() (v2 name) with set_api_creds, records creds_source, and never logs secret material. BuilderConfig is enabled only when both builder_address and builder_code are set and degrades gracefully otherwise (auth.py:60-84). AuthContext carries the L2 creds for the authenticated user-WS subscription.",
+     "evidence": "polybot/exchange/auth.py:87-153; EVIDENCE.md lines 53-55 (preflight: signer/maker/deposit, signature_type=1 POLY_PROXY, L2 creds belong to signer).",
+     "proposed_fix": "",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "clobv2-06",
+     "phase": "Phase 2",
+     "title": "clob.py uses v2 API surface correctly with order-post never retried",
+     "severity": "PASS",
+     "spec_requirement": "exchange/clob.py order/book/balance/allowance methods use v2 API surface correctly; retry/backoff sane.",
+     "observed": "Facade uses v2-specific names/params: get_open_orders(OpenOrderParams), cancel_order(OrderPayload(orderID=...)), cancel_market_orders(OrderMarketCancelParams), get_trades(TradeParams), get_balance_allowance/update_balance_allowance(BalanceAllowanceParams with AssetType.COLLATERAL + signature_type), OrderArgs + PartialCreateOrderOptions with the v2 tick ladder including 0.005/0.0025 (_fmt_tick, clob.py:225-234). create_order and post_order both run under RetryPolicy(attempts=1) (_no_retry) so a lost response never duplicates a live order, while reads/cancels use the normal backoff policy; latency metrics recorded per call.",
+     "evidence": "polybot/exchange/clob.py:106-152,176-222,225-234,38-39,121-125; Docs/CLOB_V2_MIGRATION.md:33-49.",
+     "proposed_fix": "",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "clobv2-07",
+     "phase": "Phase 2",
+     "title": "wallet/* use v2 correctly and are read-only where expected",
+     "severity": "PASS",
+     "spec_requirement": "wallet/{allowance,approval,maker,balance,readiness}.py use v2 correctly and READ-ONLY where expected.",
+     "observed": "Spender/USDC addresses come from py_clob_client_v2.config.get_contract_config (no hardcoding) in allowance.py:29-49, approval.py:28/134, readiness.py:29. allowance.verify() and readiness.evaluate() only read (refresh_collateral_allowance = server-side GET cache refresh, get_collateral_allowances/balance, get_api_keys, get_closed_only_mode) and never submit. maker.py validates creds-ownership + maker/funder coherence read-only. approval.py refuses to broadcast for signature_type in {1,2,3} (proxy) and only sends approve for EOA behind AUTO_APPROVE_ALLOWANCE + POLYGON_RPC_URL, matching the proxy/EOA model; readiness fails safe (unknown allowance/balance -> 0 -> blocks live). Consistent with observed readiness.json (live_ready=false, honest missing_requirements).",
+     "evidence": "polybot/wallet/allowance.py:29-134; approval.py:66-164; maker.py:57-152; readiness.py:52-154; EVIDENCE.md lines 30-32.",
+     "proposed_fix": "",
+     "fix_risk": "none",
+     "confidence": 0.88
+    },
+    {
+     "id": "clobv2-08",
+     "phase": "Phase 2",
+     "title": "websocket.py + market_registry.py are v2-compatible with correct endpoints",
+     "severity": "PASS",
+     "spec_requirement": "market_registry.py + websocket.py compatible with v2 / correct endpoints.",
+     "observed": "clob_ws_url defaults to wss://ws-subscriptions-clob.polymarket.com/ws and ClobWebSocket appends /{channel} -> /ws/market and /ws/user (websocket.py:48). market_subscription uses {'type':'market','assets_ids':[...]} and user_subscription attaches {'auth':{apiKey,secret,passphrase}} (websocket.py:162-173) \u2014 the correct Polymarket CLOB channels. Reconnect uses exponential backoff and active ping/pong liveness so an idle authenticated user channel is not falsely dropped (matches EVIDENCE reconnects=0). market_registry resolves markets via the v2 get_market/get_tick_size through the facade and maps token[0]/token[1] to up/down consistently.",
+     "evidence": "polybot/exchange/websocket.py:48,96-138,162-173; polybot/config/settings.py:146,251; polybot/exchange/market_registry.py:47-92,112-133; EVIDENCE.md lines 27,184.",
+     "proposed_fix": "",
+     "fix_risk": "none",
+     "confidence": 0.85
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "clobv2-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: ClobExchange._call (clob.py:52-61) dispatches every SDK method via asyncio.to_thread with no lock, and live_sync.sync_once (live_sync.py:212-220) runs _sync_health/_sync_balance/_sync_orders/_sync_trades concurrently via asyncio.gather. Those four all call the single shared py_clob_client_v2 ClobClient (positions/value instead use the separate httpx RestClient), so >=4 SDK calls execute in parallel worker threads over one non-thread-safe requests session/connection pool. This matches the observed EAGAIN batches of 2-4 at identical timestamps (EVIDENCE 57-70), which the sequential live engine avoids. Real defect degrading the dashboard live-account panel; WARN severity is correct (trading safety and DB source-of-truth unaffected). Minimal in-lane fix: an asyncio.Lock in _call.",
+     "evidence": "polybot/exchange/clob.py:52-61; dashboard/live_sync.py:212-220; EVIDENCE.md:57-70"
+    },
+    {
+     "id": "clobv2-02",
+     "verdict": "ADJUSTED",
+     "corrected_severity": "INFO",
+     "reason": "Claim is literally accurate: requirements.txt line 4 is 'py-clob-client-v2>=1.1.0', a lower bound not a pin, so a future incompatible 2.x could satisfy it on a fresh install. But severity is overstated. Every dependency in the file uses floors (httpx>=0.27, fastapi>=0.110, eth-account>=0.13, etc.), there is no lockfile discipline anywhere, and the running system is already fixed at 1.1.0 with no possibility of silent drift absent a deliberate reinstall plus a hypothetical breaking release. The finding itself concedes production is fine today. This is a reproducibility/hygiene concern, not a runtime defect -> INFO. Fix (pin ==1.1.0 or >=1.1.0,<2) is still reasonable.",
+     "evidence": "requirements.txt:4; EVIDENCE.md:35 (py_clob_client_v2==1.1.0 installed)"
+    },
+    {
+     "id": "clobv2-03",
+     "verdict": "ADJUSTED",
+     "corrected_severity": "INFO",
+     "reason": "Mechanism confirmed: build_public_reader (paper/main.py:50-64) iterates ('py_clob_client_v2.client','py_clob_client.client') and would build a v1 ClobClient if only v1 were present, but ClobExchange.__init__ (clob.py:43-44) unconditionally does 'from py_clob_client_v2 import AssetType, OrderType' and '...order_builder.constants import BUY, SELL', so a v1-only environment crashes at ClobExchange construction. The v1 branch is therefore dead code. However this actually confirms the spec requirement ('no functional dependency on old py-clob-client') is MET -- there is no working v1 path. The residual issue is only misleading dead code and a confusing error message in a v1-only env (which does not exist in production; v2-only installed). No functional defect -> INFO, not WARN. Fix: drop the 'py_clob_client.client' fallback entry and comment.",
+     "evidence": "polybot/paper/main.py:50-64; polybot/exchange/clob.py:43-44; EVIDENCE.md:35-37"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "live_data",
+  "component": "Live Account Sync + Market Data + WebSocket",
+  "analyze": {
+   "lane": "live_data",
+   "component": "Live Account Sync + Market Data + WebSocket",
+   "component_status": "FAIL",
+   "summary": "Market discovery, per-market data, and WebSocket resilience are strong, honest, and NOT hardcoded (real Gamma discovery filtered by configurable asset/duration, full per-market field set, exponential backoff, active-ping liveness, REST backstop). The live ACCOUNT sync path has one confirmed production defect: LiveAccountSync.sync_once fans out 4-6 authenticated SDK calls via asyncio.gather, each dispatched with asyncio.to_thread onto a SINGLE shared, non-thread-safe py_clob_client_v2 requests session -> concurrent socket use -> the observed repeated [Errno 11] EAGAIN. The engine never hits this because its loops (poll 5s / book 10s / heartbeat 15s) are spaced and internally sequential. Secondary honesty gap: live account numeric fields default/persist as fake 0.0 (balance, portfolio) and [] (orders/trades/positions) rather than an explicit UNKNOWN/N/A on failure or before first successful fetch; only aggregate status flags (error_count, last_error, sections_failed, balance_ts) signal degradation. Concurrency fix is minimal and low-risk.",
+   "findings": [
+    {
+     "id": "LD-01",
+     "phase": "22",
+     "title": "dashboard live_sync EAGAIN: concurrent gather over a shared non-thread-safe CLOB SDK session",
+     "severity": "FAIL",
+     "confidence": 0.95,
+     "verdict": "CONFIRMED",
+     "spec_requirement": "WebSocket for real-time, REST for reconciliation; sane concurrency; no rate-limit abuse; temporary failure never becomes fake zero; fault tolerance.",
+     "observed": "LiveAccountSync.sync_once runs _sync_health/_sync_balance/_sync_orders/_sync_trades (+_sync_positions/_sync_value on slow cycles) concurrently under asyncio.gather. Each ClobExchange method dispatches the blocking SDK call via asyncio.to_thread onto the ONE shared py_clob_client_v2 client (self._c), whose underlying requests/urllib3 session is not thread-safe. Multiple worker threads touch the same socket simultaneously -> [Errno 11] Resource temporarily unavailable (EAGAIN). _sync_balance itself issues 2 sequential SDK calls, so a fast cycle spawns 4-5 concurrent threads, matching the observed 'batches of 2-4 at identical timestamps' every ~70-80s. The live ENGINE issues the same calls without error because main.py's loops (order_poll 5s, book_refresh 10s, heartbeat 15s) are spaced and each awaits sequentially, so simultaneous SDK dispatch is rare. This CONFIRMS the EVIDENCE.md concurrency-collision hypothesis. WS user events also call self._wake.set() in _on_user_event, so account activity triggers extra early sync cycles, amplifying the collision rate under load.",
+     "evidence": "dashboard/live_sync.py:212-220 (asyncio.gather of the _sync_* coroutines); dashboard/live_sync.py:270-273 (_sync_balance: two sequential get_collateral_balance/get_collateral_allowances); dashboard/live_sync.py:117-119 (single shared ClobExchange/self._auth.client wrapped once); polybot/exchange/clob.py:52-61 (_call -> asyncio.to_thread(fn,...) on shared self._c); dashboard/live_sync.py:194-200 (_on_user_event sets _wake -> extra sync cycles); polybot/main.py:330-344 + config/settings.py:152-154 (engine loops spaced & sequential).",
+     "gap": "Concurrent thread access to a single non-thread-safe SDK client.",
+     "proposed_fix": "Serialize authenticated SDK dispatch. Minimal/low-risk: in sync_once replace asyncio.gather with sequential awaits (each section keeps its own try/except so failures still degrade only that section). Robust root-cause fix (also hardens the engine against the same latent race): add a per-instance `self._lock = asyncio.Lock()` in ClobExchange and wrap the `await asyncio.to_thread(fn,*args)` in `_call` with `async with self._lock:` so the shared client is never used by two threads at once. RetryPolicy(attempts=3) currently masks most collisions but wastes calls and floods logs.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "LD-02",
+     "phase": "5",
+     "title": "Live account fields show fake 0.0 / empty instead of UNKNOWN on failure or before first fetch",
+     "severity": "WARN",
+     "confidence": 0.8,
+     "verdict": "CONFIRMED",
+     "spec_requirement": "Live wallet/account fields come from real APIs; missing field => N/A; API failure => UNKNOWN (never fake 0).",
+     "observed": "_empty_state() initialises balance=0.0 and every portfolio figure (cash/positions_value/total_value/unrealized/realized/total_pnl/exposure) to 0.0, and open_orders/trade_history/positions to []. On a section failure, sync_once catches the exception via gather(return_exceptions=True), increments error_count/last_error, but leaves the field at its last value (or the initial 0.0/[]). So a persistently failing _sync_balance (e.g. during the EAGAIN storm) or a not-yet-run sync presents balance $0.00 and $0.00 PnL that are indistinguishable from genuine zeros. The value itself carries no UNKNOWN/N/A sentinel; only aggregate status (status.error_count, status.last_error, status.sections_failed, status.api_ok, and wallet.balance_ts which is only set on success and is absent in _empty_state) signal staleness, which the value fields do not reflect. This violates the strict 'never fake 0 / show UNKNOWN' requirement, though partially mitigated by the freshness/status metadata.",
+     "evidence": "dashboard/live_sync.py:452-473 (_empty_state defaults 0.0 / []); dashboard/live_sync.py:221-233 (failures only bump counters, values untouched); dashboard/live_sync.py:270-282 (balance_ts set only on success, absent from _empty_state); dashboard/live_sync.py:321-355 (_recompute_derived emits numeric 0.0 portfolio regardless of freshness).",
+     "gap": "No per-field UNKNOWN sentinel or freshness gate on the live account values themselves.",
+     "proposed_fix": "Track per-section last-success timestamps (health/balance/orders/trades/positions) and expose a per-section 'stale'/'unknown' flag; render None (mapped to UNKNOWN/N/A in the UI) instead of 0.0/[] when a section has never succeeded or last succeeded before the current auth session / beyond a staleness cutoff. At minimum add balance_ts, orders_ts, trades_ts, positions_ts to _empty_state and have the frontend show UNKNOWN when ts==0.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "LD-03",
+     "phase": "6",
+     "title": "Market discovery is real (Gamma) and NOT hardcoded to BTC/ETH/SOL/XRP condition IDs",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Market discovery: not hardcoded; discovers active markets; NO ACTIVE MARKET when none.",
+     "observed": "MarketFeed.discover() pages real active/unclosed/unarchived markets from Gamma (/markets ordered by startDate desc, limit=100, up to 10 pages, graceful stop on offset-too-large), then classifies each by asset keyword (word-boundary regex) and duration inferred from the slug window or from real start/end timestamps (not slug text alone). BTC/ETH/SOL/XRP and 5m/15m are configurable FILTERS (DASHBOARD_ASSETS/DASHBOARD_DURATIONS), not hardcoded market identifiers; settled windows (end_ts<=now) are dropped; markets are ordered by soonest-resolving and capped at max_markets_tracked. When none match, snapshot() returns markets:[] with count:0 and a discovery block (last_ts, error, tracked, limit) \u2014 honest emptiness, not fabricated. Note: the live ENGINE (main.py) trades an operator-configured MARKETS=<condition_id> list (aborts if empty), which is env-driven config, not source-hardcoded; discovery is the dashboard's responsibility and is implemented correctly.",
+     "evidence": "dashboard/market_feed.py:205-350 (discover/_fetch_active_markets/_classify); dashboard/market_feed.py:36-50 (configurable asset keywords + duration tolerances); dashboard/market_feed.py:591-636 (_match_asset word-boundary, _parse_window, _match_duration from timestamps); dashboard/config.py:98-104,188-194 (configurable filters); polybot/main.py:208-209 (engine requires configured MARKETS).",
+     "gap": "No explicit literal 'NO ACTIVE MARKET' string in the payload (count:0 + discovery.error convey it); UI must render the empty state.",
+     "proposed_fix": "Optional: add an explicit status:'NO_ACTIVE_MARKET' field to the snapshot when count==0 so the UI cannot accidentally render a blank/zero table.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-04",
+     "phase": "6",
+     "title": "Per-market field set is complete and computed from real books",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Per-market fields: question, condition id, token ids, active, accepting orders, bid/ask/mid/spread, depth, liquidity, volume, tick size, end time, time remaining, status.",
+     "observed": "snapshot() emits per market: question, slug, condition_id, up/down token ids and outcomes, tick_size, min_order_size, neg_risk, volume, volume_24h, liquidity (live book-derived with gamma fallback) and gamma_liquidity, start_ts, settlement_ts (end), time_remaining_s, accepting_orders, and a computed status ('open'/'no book'/'paused'/'settling'/'closed'). Per-outcome quote() gives bid, ask, mid, spread, spread_pct, bid/ask size, bid/ask liquidity, book_age_s (staleness), and depth (up to 12 levels of bids/asks). Values are derived from live WS book state with a REST snapshot backstop; spread/mid return None (not 0) when a side is missing.",
+     "evidence": "dashboard/market_feed.py:103-146 (quote/status incl. book_age_s and None-on-missing spread); dashboard/market_feed.py:516-559 (snapshot per-market row assembly); dashboard/market_feed.py:98-101 (time_remaining).",
+     "gap": "None material.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-05",
+     "phase": "7",
+     "title": "WebSocket resilience: exponential backoff, subscription resume, active-ping liveness, no reconnect on idle",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "WebSocket real-time with reconnection, sane intervals, exponential backoff, stale-data indicators.",
+     "observed": "ClobWebSocket reconnects on any drop with exponential backoff (1s -> capped max_backoff 30s), re-sends the subscription payload on every (re)connect, and distinguishes a quiet-but-alive socket from a dead one: on recv timeout it actively pings and counts a returned pong as liveness, only forcing reconnect if a ping is unanswered within stale_timeout (45s). It exposes status (connected, last_message_ts, age_s, reconnects) as a stale-data indicator, and one bad event never kills the socket. The engine runs separate market + user channels; live_sync uses the user channel only as an early-refresh trigger with REST as source of truth, so a dropped socket degrades to polling, not to stale data.",
+     "evidence": "polybot/exchange/websocket.py:73-139 (run/_serve backoff, subscription resume, active-ping liveness); polybot/exchange/websocket.py:63-71 (status/age_s); dashboard/live_sync.py:10-15,194-200 (WS as trigger, REST authoritative).",
+     "gap": "None material.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-06",
+     "phase": "22",
+     "title": "Timeouts, retry with jittered exponential backoff, and non-retried order posting",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Fault tolerance: timeouts, retry, backoff; no duplicate live orders on lost responses.",
+     "observed": "retry_async implements attempts with exponential backoff (factor 2) plus +/-25% jitter and a max_delay cap, with retry_on/give_up_on classification. RestClient (httpx, native async) sets per-request timeouts and classifies HTTP errors: 401/403 and other 4xx are fatal (no retry), 429/5xx and transport/timeout errors retry with backoff. ClobExchange retries read/cancel calls but deliberately posts orders with RetryPolicy(attempts=1) across the create_order->post_order two-step, so a lost response after a landed order is never duplicated. Discovery/book/candle loops all wrap failures and continue (discovery/candle 'must never die'). REST book snapshot bounds its burst to 40 tokens.",
+     "evidence": "polybot/utils/retry.py:22-71 (backoff+jitter, retry_on/give_up_on); polybot/api/rest_client.py:46-48,111-127 (error classification, no-retry auth/4xx); polybot/exchange/clob.py:39,106-126 (_no_retry on post_order); dashboard/market_feed.py:196-203,463-471,436 (loops survive failures, bounded burst).",
+     "gap": "None material.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-07",
+     "phase": "5",
+     "title": "Account data coverage: orders, partial fills, trades, positions, portfolio, PnL, fees, exposure, allowances, status",
+     "severity": "PASS",
+     "confidence": 0.8,
+     "spec_requirement": "Account data: open/pending/filled/cancelled orders, partial fills, trade history, positions, portfolio value, realized/unrealized/total PnL, fees, exposure, exchange/API/WS status, last sync time.",
+     "observed": "live_sync reads real data via the authenticated SDK and data-API: open orders (with filled_size/remaining_size/filled_pct = partial-fill detail), trade history (capped 500, with fee resolved from absolute fee or bps rate), positions (via data-api /positions for the funder), balance and per-spender allowances, portfolio value (data-api /value), and derives locked/available/buying_power, positions_value, total_value, unrealized/realized/total PnL, exposure, open_order_notional and fees_paid. Status block carries api_ok, authenticated/auth_status, websocket_connected + WS status, last_sync_ts/iso, sync_latency_ms, sync_count, error_count, last_error, clob_latency, sections_failed. Separately, EngineView surfaces the engine DB's own order status buckets (open/filled/cancelled/rejected/pending), fills, trades, positions, equity series and PnL as the persisted source of truth (survives engine stop). Order/trade/position normalisers tolerate multiple API shapes and map missing numerics to None rather than inventing values. Overall PnL breakdown to daily/weekly/monthly is an analytics-lane concern; live_sync provides realized/unrealized/total. Coverage is honest and comprehensive, subject to LD-01 (collision-induced staleness) and LD-02 (fake-zero defaults).",
+     "evidence": "dashboard/live_sync.py:284-355 (orders/trades/positions/value + derived portfolio & fees); dashboard/live_sync.py:366-436 (shape-tolerant normalisers, None on missing); dashboard/live_sync.py:243-258 (status incl. last sync + WS + latency); dashboard/engine_view.py:76-134,213-259 (persisted order/fill/trade/position/equity source of truth).",
+     "gap": "Daily/weekly/monthly PnL not produced in live_sync (handled by analytics lane); staleness/honesty caveats tracked in LD-01/LD-02.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-08",
+     "phase": "22",
+     "title": "Read-only wrapper prevents the dashboard from ever placing/cancelling/signing an order",
+     "severity": "PASS",
+     "confidence": 0.95,
+     "spec_requirement": "Live sync must read real account data without any order-mutating capability.",
+     "observed": "ReadOnlyExchange proxies only an allowlist of read methods (health, server_time, address, get_market, get_order_book, get_tick_size, get_neg_risk, best_bid_ask, get_orders, get_order, get_trades, get_collateral_balance, get_collateral_allowances); any other attribute (place_order, cancel*, refresh_collateral_allowance, etc.) raises AttributeError. So even though live_sync authenticates with the live signing key, no dashboard code path can create, sign, cancel, or post an order.",
+     "evidence": "dashboard/live_sync.py:34-54 (_READ_ONLY_METHODS allowlist + __getattr__ deny); dashboard/live_sync.py:117-119 (exchange wrapped before use).",
+     "gap": "None.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "LD-09",
+     "phase": "5",
+     "title": "Unlimited allowance (inf) can leak into JSON as non-standard Infinity",
+     "severity": "INFO",
+     "confidence": 0.5,
+     "verdict": "PLAUSIBLE",
+     "spec_requirement": "Account fields must serialise as valid, honest data.",
+     "observed": "_sync_balance maps inf allowances to None in wallet.allowances, but wallet.allowance_min = min(finite.values()) is computed from the dict that still contains inf; if every spender allowance were unlimited, allowance_min would be inf and be JSON-serialised as 'Infinity' (invalid strict JSON). Does not occur today (EVIDENCE: allowances 0.0 on all 3 spenders) and only arises for a fully-approved wallet, so impact is negligible now, but it is a latent serialisation edge.",
+     "evidence": "dashboard/live_sync.py:274-282 (finite dict keeps inf; allowance_min=min(finite.values())); dashboard/live_sync.py:331-335 (buying_power min with allowance_min).",
+     "gap": "inf not sanitised before it can reach allowance_min/JSON.",
+     "proposed_fix": "Compute allowance_min over finite (non-inf) values only, or map inf->None consistently before min(); treat all-unlimited as allowance_ok=True with allowance_min=None.",
+     "fix_risk": "none"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "LD-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "Independently verified in source. sync_once (live_sync.py:212-220) launches _sync_health/_sync_balance/_sync_orders/_sync_trades (+_sync_positions/_sync_value on slow cycles) under a single asyncio.gather. Every one bottoms out in ClobExchange._call (clob.py:52-61), which dispatches the blocking SDK call via asyncio.to_thread(fn,*args) onto the default multi-worker thread pool, all touching the ONE shared client self._c (built once at live_sync.py:117-119 from self._auth.client). No lock exists anywhere in _call or sync_once. _sync_balance itself fires two sequential get_balance_allowance calls (live_sync.py:270-273), so a fast cycle yields 4-5 concurrent threads over the shared non-thread-safe requests/urllib3 session; _on_user_event (:194-200) sets _wake to trigger extra early cycles, amplifying collisions. This structurally produces concurrent access to a non-thread-safe client and matches the EVIDENCE.md runtime fingerprint (EAGAIN in batches of 2-4 at identical timestamps every ~70-80s). RetryPolicy(attempts=3) masks most collisions but wastes calls and floods logs. FAIL is appropriate: a real, actively-occurring production reliability defect violating 'sane concurrency / no rate-limit abuse / fault tolerance'. The proposed fix (sequential awaits in sync_once, or a per-instance asyncio.Lock around the to_thread dispatch in _call) is correct and minimal. Note: the engine-side claim (main.py loops spaced/sequential) was not independently re-verified but is not load-bearing for the defect's existence, which is fully provable from live_sync.py + clob.py.",
+     "evidence": "dashboard/live_sync.py:212-220 (asyncio.gather of _sync_* coroutines); dashboard/live_sync.py:270-273 (_sync_balance: two sequential get_collateral_balance/get_collateral_allowances, each -> get_balance_allowance); dashboard/live_sync.py:117-119 (single shared ClobExchange over self._auth.client, wrapped once); polybot/exchange/clob.py:52-61 (_call -> asyncio.to_thread(fn,*args) on shared self._c, no lock); dashboard/live_sync.py:194-200 (_on_user_event sets _wake -> extra cycles)."
+    },
+    {
+     "id": "LD-02",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Independently verified. _empty_state (live_sync.py:452-473) seeds balance=0.0 and every portfolio figure (cash/positions_value/total_value/unrealized/realized/total_pnl/exposure) to 0.0, and open_orders/trade_history/positions to []; balance_ts is NOT present in the initial wallet dict and is written only on a successful _sync_balance (:281). On a section failure, sync_once (:221-233) only increments error_count/last_error and leaves the value fields at their prior (or initial 0.0/[]) state. _recompute_derived (:321-355) then emits numeric 0.0 portfolio regardless of freshness. Crucially, the frontend confirms the impact: F.money (static/app.js:48) returns the em-dash placeholder ONLY for null/undefined, so the backend's 0.0 defaults render as literal $0.00 for USDC balance, portfolio value and PnL (app.js:528-531,574-580) \u2014 indistinguishable from a genuine zero \u2014 before the first successful fetch or during a persistent failure/EAGAIN storm. The null->em-dash pattern is already wired elsewhere (allowance_min at app.js:547), so switching these fields to None would correctly surface UNKNOWN. This is a real violation of the 'API failure => UNKNOWN / never fake 0' honesty requirement. Severity WARN (not FAIL) is correct: it is materially mitigated by prominent status metadata the UI does render (Authentication banner, CLOB API reachable/unreachable at app.js:563, error_count at :568, last_error at :571), the dashboard is localhost-only/single-operator, and the current real balance is genuinely 0.0 so no active fabrication is presently displayed. The proposed fix (add balance_ts/orders_ts/trades_ts/positions_ts to _empty_state and render None until a section first succeeds / when stale) is correct and low-risk given the frontend already maps null to the placeholder.",
+     "evidence": "dashboard/live_sync.py:452-473 (_empty_state numeric 0.0 / [] defaults, no balance_ts); dashboard/live_sync.py:221-233 (failures bump counters only, values untouched); dashboard/live_sync.py:281 (balance_ts set only on success); dashboard/live_sync.py:321-355 (_recompute_derived emits 0.0 regardless of freshness); dashboard/static/app.js:48 (F.money -> em-dash only for null/undefined, so 0.0 => $0.00); dashboard/static/app.js:528-531,547,574-580 (rendering of balance/portfolio/PnL and the null->'\u2014' pattern for allowance_min)."
+    }
+   ]
+  }
+ },
+ {
+  "lane": "analytics_honesty",
+  "component": "Charts + Indicators + Strategy + Analytics honesty",
+  "analyze": {
+   "lane": "analytics_honesty",
+   "component": "Charts + Indicators + Strategy + Analytics honesty",
+   "component_status": "FAIL",
+   "summary": "Indicators and charts are honest: every indicator returns None (rendered as \"\u2014\") when the window isn't full, compute_all gates on candle count, and the pure-canvas charts show explicit empty text with no fabricated points. However two Phase 9/10 data-honesty requirements FAIL at runtime: with the confirmed ZERO completed trades, the Analytics tab renders fabricated \"0.00%\" win/loss rate and \"0.0000\" expectancy/average-trade instead of N/A, and the Strategy panel shows an INVENTED \"Accuracy\" metric (a relabelled duplicate of win_rate) plus a \"0.00%\" win rate for a strategy with no completed trades. Two WARNs: candle OHLCV source is not labelled in the UI (risk of implying Polymarket supplies OHLCV), and Sharpe/Sortino annualise (\u00d7\u221a365) from as few as 2-3 daily samples.",
+   "findings": [
+    {
+     "id": "AH-01",
+     "phase": "10",
+     "title": "Zero completed trades render fabricated 0% / 0.0000 analytics instead of N/A",
+     "severity": "FAIL",
+     "confidence": 0.9,
+     "spec_requirement": "Trade analytics computed ONLY from completed trades; 0 completed trades => \"N/A\" not \"0%\".",
+     "observed": "With no completed trades (EVIDENCE: trades(0) in both live & paper DBs), trade_stats() returns _empty_trade_stats() with win_rate=0.0, loss_rate=0.0, average_trade=0.0, average_win=0.0, average_loss=0.0, expectancy=0.0, expectancy_pct=0.0, largest_win=0.0, largest_loss=0.0. The Analytics tab then renders 'Win rate 0.00%', 'Loss rate 0.00%', 'Average trade 0.0000', 'Expectancy 0.0000' etc. F.pct(0.0)='0.00%' and F.signed(0.0)='0.0000' (0 is not null so the '\u2014' guard is bypassed). This falsely implies a 0% (all-losing) win rate rather than 'no data'. Mitigating: ratio metrics that ARE None (profit_factor, sharpe, sortino, calmar, avg_r, risk_reward) correctly show '\u2014', and KPI subtitles show '0 trades' / '0W / 0L'.",
+     "evidence": "dashboard/analytics.py:79-90 (_empty_trade_stats returns 0.0 for win_rate/loss_rate/average_trade/expectancy); dashboard/static/app.js:976,986-995 (F.pct(t.win_rate), F.signed(t.average_trade/expectancy)); dashboard/static/app.js:44,50,51-55 (F.num/F.pct/F.signed treat 0 as a real value, not '\u2014').",
+     "proposed_fix": "In _empty_trade_stats() (and the len(pnls)==0 path) return None instead of 0.0 for win_rate, loss_rate, average_trade, average_win, average_loss, expectancy, expectancy_pct, largest_win, largest_loss. The front-end already renders None as '\u2014' via F.pct/F.num/F.signed, so no JS change is required. net_pnl/total_fees may remain 0.0 (genuinely zero).",
+     "fix_risk": "low",
+     "gap": "Front-end null-safe already; only the empty-stats defaults need to become None."
+    },
+    {
+     "id": "AH-02",
+     "phase": "9",
+     "title": "Strategy panel shows invented \"Accuracy\" metric and 0.00% win rate the strategy does not provide",
+     "severity": "FAIL",
+     "confidence": 0.88,
+     "spec_requirement": "Strategy panel shows ONLY fields the strategy actually exposes; if the strategy lacks confidence/stop-loss/take-profit/accuracy => \"NOT PROVIDED BY STRATEGY\", never invented.",
+     "observed": "engine_view.strategies() manufactures an 'accuracy' field set equal to win_rate (stats.get('win_rate',0.0)) and defaults win_rate/accuracy to 0.0 when the strategy has no completed trades. The compiled CheapBuyStrategy (base.Strategy contract in polybot/strategy/base.py) exposes no accuracy/win-rate concept at all. The Strategy card then renders 'Win rate 0.00%' and 'Accuracy 0.00%' for the single running strategy (EVIDENCE: strategy_state(1), zero completed trades) \u2014 an invented metric showing a fabricated 0%. This value is also carried in the 1 Hz snapshot via summary()->strategies(), so it is live-visible. (Confidence is handled honestly: shows 'not published' when null; stop/target show '\u2014' when the strategy doesn't set them.)",
+     "evidence": "dashboard/engine_view.py:200-207 (\"win_rate\": stats.get(\"win_rate\", 0.0), \"accuracy\": stats.get(\"win_rate\", 0.0)); dashboard/engine_view.py:248 (strategies() included in per-mode summary snapshot); dashboard/static/app.js:823-824 (stat('Win rate', F.pct(strategy.win_rate)); stat('Accuracy', F.pct(strategy.accuracy))); polybot/strategy/base.py:83-114 (Strategy contract has no accuracy/confidence/SL/TP).",
+     "proposed_fix": "Drop the duplicated 'accuracy' field (or render it as 'not provided by strategy'), and default win_rate/average_win/average_loss/total_pnl/profit_factor to None (not 0.0) when the strategy has no completed trades (stats absent). Front-end F.pct(null) already yields '\u2014'; for accuracy specifically render a literal 'not provided' label like the confidence field.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "AH-03",
+     "phase": "8",
+     "title": "Candle/OHLCV source not labelled in the dashboard UI",
+     "severity": "WARN",
+     "confidence": 0.75,
+     "spec_requirement": "Candle/price SOURCE clearly labeled (e.g. \"Polymarket midpoint\", \"reconstructed\"); never imply Polymarket supplied OHLCV.",
+     "observed": "Candles are honestly reconstructed from the up-outcome order-book midpoint sampled each interval (OHLC = min/max/last of mid), with volume from observed WS trade prints \u2014 this is documented in the module docstrings. But the Markets tab presents a full OHLCV-style indicator grid (EMA/RSI/MACD/ATR/VWAP/Bollinger/ADX/Volume \u0394) and a candle chart with only a 'Mid' series label and no visible note that Polymarket publishes no OHLCV and these bars are reconstructed. A user could reasonably assume exchange-supplied candles. (Not a fabrication \u2014 the underlying data is real; the gap is labelling.)",
+     "evidence": "dashboard/indicators.py:1-13 (docstring: 'Polymarket does not publish OHLCV ... builds candles itself from the mid price'); dashboard/market_feed.py:11-12,473-499 (_sample_candles builds OHLC from mid_price, volume from trade prints); dashboard/static/app.js:711-774 (market card: indicator grid + chart, hint line 773 omits candle source); dashboard/static/app.js:677-685 (chart series labelled only 'Mid').",
+     "proposed_fix": "Add a hint on the market card / candle chart, e.g. 'Candles reconstructed from Polymarket order-book midpoint (no exchange OHLCV); volume from observed trade prints.' No logic change.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "AH-04",
+     "phase": "10",
+     "title": "Sharpe/Sortino annualised (\u00d7\u221a365) from as few as 2-3 daily samples",
+     "severity": "WARN",
+     "confidence": 0.7,
+     "spec_requirement": "Sharpe/Sortino require enough samples; no annualizing minutes of data.",
+     "observed": "equity_stats() correctly buckets equity samples to UTC days before computing returns (so it never annualises minutes \u2014 good), and returns None when <2 daily returns exist. But it will compute and annualise a Sharpe/Sortino by \u00d7\u221a365 as soon as there are just 2 daily returns (i.e. 3 distinct calendar days of samples), which is far too few for a meaningful annualised ratio and can produce wildly large/misleading values. The UI hint also states the ratios appear 'until at least two days of samples exist', whereas the code needs 3 distinct days for a ratio. Currently benign at runtime (equity spans <3 days => shows '\u2014'), but the gate is thin.",
+     "evidence": "dashboard/analytics.py:144-159 (if len(daily) >= 2: ... sharpe = mean/sd*sqrt(365)); dashboard/analytics.py:198-209 (_daily_returns => N-1 returns for N distinct days); dashboard/static/app.js:1017 (hint: 'until at least two days of samples exist').",
+     "proposed_fix": "Raise the minimum daily-return count before emitting Sharpe/Sortino (e.g. require >=20 daily returns, or gate on span_days>=~30), and correct the UI hint to match the actual threshold.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "AH-05",
+     "phase": "8",
+     "title": "Volume/VWAP/Volume-Delta reflect only up-token trade prints",
+     "severity": "INFO",
+     "confidence": 0.7,
+     "spec_requirement": "Indicators computed only with enough real data; sources honest (data completeness).",
+     "observed": "_record_trade_volume() only accumulates volume/buy_volume/sell_volume when token == market.up_token, so DOWN-outcome trade prints are ignored. Volume, VWAP and Volume-Delta therefore reflect only up-token activity. This is internally consistent (candle close/high/low are the up-token mid) and is real observed data, not fabricated \u2014 but the displayed 'Volume \u0394' understates total market activity. Not a fake zero.",
+     "evidence": "dashboard/market_feed.py:453-461 (if ... token != market.up_token: return); dashboard/indicators.py:174-199 (vwap/volume_delta consume these partial volumes).",
+     "proposed_fix": "Either count both outcomes' prints (up-side equivalent) into candle volume, or label the VWAP/Volume-\u0394 tiles as 'up-outcome only'. Optional.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "AH-06",
+     "phase": "8",
+     "title": "Indicators return None (rendered '\u2014') on insufficient data, never a fake zero",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Indicators computed only with enough real data; else N/A, never 0.",
+     "observed": "Every indicator guards its window: ema/wilder_smooth return [None]*n when len<period; rsi requires len>period; macd gates the signal on len(defined)>=signal; bollinger/atr/adx/momentum/realised_volatility return None until their windows fill; compute_all returns {ready:False, bars:0} for empty candle series. _last()/_tail() propagate None, and the front-end F.num/F.price/F.pct render None as '\u2014' (not 0). No indicator emits a fabricated 0 for a not-yet-computable window.",
+     "evidence": "dashboard/indicators.py:36-48,51-62,68-85,88-107,121-150,153-168,205-242,248-255,318-323; dashboard/static/app.js:44,49,50,752-771 (indicator tiles use F.num/F.price/F.pct with null->'\u2014', volatility_pct/momentum_pct explicit '\u2014' on null).",
+     "fix_risk": "none"
+    },
+    {
+     "id": "AH-07",
+     "phase": "11",
+     "title": "Charts guard insufficient data and are lightweight with no fabricated points",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Charts guard insufficient data with 'Not enough data'; no fabricated points; not CPU/RAM heavy.",
+     "observed": "charts.js is pure 2D canvas with no external libraries (CSP-friendly), caps devicePixelRatio at 2, and every mark (line/bars/histogram/hbars/donut/timeline/spark/depth) calls empty() with a caller-supplied message when data is missing; spark returns silently for <2 points. Null/non-finite values become gaps in lines (pts mapped to null and skipped) rather than interpolated fake points. Callers pass explicit empty text ('Collecting candles\u2026', 'No completed trades yet', 'Not enough trades yet', 'No equity samples yet', etc.).",
+     "evidence": "dashboard/static/charts.js:1-11,35-48,126-134,148,157-177,207,233-234,254,284,324,357-358,441-447; dashboard/static/app.js:684,805,1113-1162 (emptyText strings).",
+     "fix_risk": "none"
+    },
+    {
+     "id": "AH-08",
+     "phase": "10",
+     "title": "Trade analytics derived only from completed trades; undefined ratios correctly N/A",
+     "severity": "PASS",
+     "confidence": 0.85,
+     "spec_requirement": "Analytics from completed trades only (signals/rejected/cancelled don't count); ratios that need more history return N/A; definitions documented.",
+     "observed": "full_report() consumes only the engine 'trades' table (completed round trips) and the 'equity' samples; order signals/rejections/cancellations live in the separate orders table and are never counted. profit_factor, average_r_multiple, risk_reward_ratio, payoff_ratio, sharpe, sortino, calmar all return None when their denominators/samples are undefined (rendered '\u2014'). Sortino explicitly returns None when no downside is observed. Definitions are documented in the UI (profit factor 'gross win \u00f7 gross loss'; 'Sharpe/Sortino annualised from daily equity returns'; volatility labelled '(ann.)').",
+     "evidence": "dashboard/engine_view.py:115-120,261-263 (trades()/analytics() query trades table); dashboard/analytics.py:60,71-73,146-164,344-354; dashboard/static/app.js:977,1002-1005,1017.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "AH-09",
+     "phase": "9",
+     "title": "Strategy confidence honestly shows 'not published'; SL/TP passthrough only",
+     "severity": "PASS",
+     "confidence": 0.8,
+     "spec_requirement": "If strategy lacks confidence/stop-loss/take-profit => don't invent them.",
+     "observed": "engine_view.strategies() only sets confidence when the DB state actually carries a non-null value (else None), and stop_loss/take_profit are passed straight through from strategy_state per market. The front-end renders confidence as 'not published' when null and stop/target as '\u2014' when null, so it does not invent these fields the CheapBuy strategy never sets. (Only the 'accuracy'/win_rate fabrication in AH-02 breaks the otherwise-honest panel.)",
+     "evidence": "dashboard/engine_view.py:167-192 (confidence only set if state['confidence'] is not None; stop_loss/take_profit passthrough); dashboard/static/app.js:819,838-839.",
+     "fix_risk": "none"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "AH-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "_empty_trade_stats() in analytics.py returns literal 0.0 for win_rate/loss_rate/average_trade/average_win/average_loss/expectancy/expectancy_pct/largest_win/largest_loss (only ratio metrics return None). The front-end formatters guard only null/undefined, so 0 renders as a real value. With zero completed trades (verified in EVIDENCE: trades(0) in both DBs) the Analytics tab shows fabricated 'Win rate 0.00%', 'Average trade 0.0000', 'Expectancy 0.0000', etc. \u2014 a direct violation of the explicit requirement that 0 completed trades must read N/A, not 0%.",
+     "evidence": "dashboard/analytics.py:79-90 (0.0 defaults); dashboard/static/app.js:44,50,51-55 (F.num/F.pct/F.signed treat 0 as real); dashboard/static/app.js:976,986-995 (rendered in KPI + trade stats)",
+     "verdict_note": "FAIL severity correct"
+    },
+    {
+     "id": "AH-02",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "engine_view.py:205 manufactures an 'accuracy' field set equal to win_rate \u2014 a metric the Strategy contract (polybot/strategy/base.py:83-114) does not expose. With no completed trades, _by_strategy()->group_performance() returns empty (engine_view.py:297-300), so stats={} and both win_rate and accuracy default to 0.0 (lines 200,205). app.js:823-824 renders 'Win rate 0.00%' and 'Accuracy 0.00%'; it is also live-visible via summary()->strategies() (line 248). Invented metric plus fabricated 0% \u2014 violates the requirement to show only strategy-exposed fields.",
+     "evidence": "dashboard/engine_view.py:200,205,248; dashboard/engine_view.py:297-300; dashboard/static/app.js:823-824; polybot/strategy/base.py:83-114",
+     "verdict_note": "FAIL severity correct"
+    },
+    {
+     "id": "AH-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Candles are honestly reconstructed from the order-book midpoint (documented only in module docstrings indicators.py:1-13 and market_feed.py), but the Markets tab presents a full OHLCV-style indicator grid (app.js:751-772) and a candle chart whose only series label is 'Mid' (app.js:679), with the sole card hint (app.js:773) covering settlement/min-size/neg-risk and no candle-source note. Underlying data is real, so this is a labelling gap, not a fabrication \u2014 WARN is correct.",
+     "evidence": "dashboard/indicators.py:1-13; dashboard/static/app.js:679,751-772,773",
+     "verdict_note": "WARN severity correct"
+    },
+    {
+     "id": "AH-04",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "equity_stats() correctly buckets samples to UTC days and returns None when <2 daily returns exist, but it annualises Sharpe/Sortino by \u00d7sqrt(365) as soon as len(daily)>=2 (analytics.py:146-157), and _daily_returns yields N-1 returns for N distinct days (analytics.py:198-209), so only 3 distinct calendar days are required \u2014 far too few for a meaningful annualised ratio. The UI hint (app.js:1017) says ratios appear once 'two days of samples exist', which understates the actual 3-distinct-day requirement. Currently benign at runtime; latent thin gate \u2014 WARN is correct.",
+     "evidence": "dashboard/analytics.py:144-159,198-209; dashboard/static/app.js:1017",
+     "verdict_note": "WARN severity correct"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "dash_security",
+  "component": "Authentication",
+  "analyze": {
+   "lane": "dash_security",
+   "component": "Authentication",
+   "component_status": "WARN",
+   "summary": "Dashboard auth stack is solid and honest: bcrypt(cost 12) password hashing, server-side opaque 256-bit sessions with HttpOnly/SameSite=Lax/Secure cookies, mandatory X-CSRF-Token double-check on all writes, server-enforced 3-role RBAC, per-(user|IP) login lockout, idle+absolute session timeouts, append-only audit trail with secret masking, and a required no-default secret key. Orders table exposes all 13 required real-exchange fields (with honest \"\u2014\"/empty states, never fake zeros), the journal auto-records completed trades idempotently with optional non-blocking screenshots, and alert channels are correctly optional (email/telegram/discord disabled by default, missing creds never fail startup). One real gap: session revocation and session-timeout are only enforced on REST \u2014 an already-open WebSocket is authenticated once at connect and never re-checked, so a disabled/deleted/password-reset user keeps streaming live data over their open socket. Three low-severity notes (unused secret key, spoofable XFF, bcrypt 72-byte truncation).",
+   "findings": [
+    {
+     "id": "DASHSEC-W1",
+     "phase": "18",
+     "title": "Open WebSocket is authenticated only at connect; session revocation and timeout are not enforced on the live stream",
+     "severity": "WARN",
+     "confidence": 0.9,
+     "fix_risk": "low",
+     "spec_requirement": "Secure sessions with idle + absolute timeout and role-based access; disabling/deleting a user or changing a password must terminate that user's access.",
+     "observed": "websocket_endpoint resolves the principal exactly once at accept and then loops forever on receive_json without ever re-validating the session. hub.revoke_session (which actually closes the socket) is only called from the /api/auth/logout route (server.py:251) and the self-service /api/auth/password route (server.py:275). Admin user-management paths \u2014 set_active (security.py:138), delete_user (security.py:143) and admin password reset via patch_user->change_password (security.py:159) \u2014 only call revoke_user_sessions, which deletes the DB session rows but never closes the victim's open WebSocket. Consequently a user who is disabled, deleted, or has their password reset by an admin (and any session past its idle/absolute TTL) keeps receiving live snapshot broadcasts (portfolio, engine, live-account, notification data) over the already-open socket until they voluntarily disconnect; only subsequent REST calls 401.",
+     "evidence": "dashboard/server.py:286-312 (WS resolves once, no re-check); dashboard/server.py:640-656 (patch_user has no hub.revoke_session); dashboard/security.py:133-144,156-159,261-262 (revoke_user_sessions = DB delete only); dashboard/hub.py:68-73 (revoke_session closes sockets, but is not called from admin paths).",
+     "gap": "Streaming channel bypasses session lifecycle enforced everywhere else.",
+     "proposed_fix": "In the WS receive loop periodically re-run security.resolve(sid) (e.g. each broadcast tick or every N seconds) and close with 4401 if it returns None; and call await hub.revoke_session for each affected sid from set_active/delete_user/admin password-reset (or call hub.revoke_user_sessions). Minimal, low blast-radius since the plumbing (hub.revoke_session) already exists."
+    },
+    {
+     "id": "DASHSEC-I1",
+     "phase": "18",
+     "title": "DASHBOARD_SECRET_KEY is required and length-validated but never used cryptographically",
+     "severity": "INFO",
+     "confidence": 0.95,
+     "fix_risk": "none",
+     "spec_requirement": "Secret key management for secure sessions.",
+     "observed": "config.py hard-fails startup if DASHBOARD_SECRET_KEY is absent or <32 chars and masks it in redacted(), and the docstring claims 'a missing session secret is a hard failure'. But sessions are opaque random tokens stored server-side and CSRF tokens are also server-side stored; grep shows secret_key is only read/validated/masked, never fed to any signer, HMAC, or cookie-signing routine. It is effectively dead config. This is not a vulnerability (server-side sessions are stronger than signed cookies) but the requirement/behaviour is misleading.",
+     "evidence": "grep secret_key -> only dashboard/config.py:17,69,157,166,227-233 and run_dashboard.py:43; no consumer. Sessions minted via secrets.token_urlsafe in dashboard/security.py:212-213; CSRF compared via stored value in security.py:247-249.",
+     "proposed_fix": "Either wire secret_key into something real (e.g. sign the session cookie as defense-in-depth) or downgrade the docstring/env comment to state it is a reserved/forward-compat value so operators are not misled about what protects their sessions."
+    },
+    {
+     "id": "DASHSEC-I2",
+     "phase": "18",
+     "title": "X-Forwarded-For is trusted unconditionally when behind_proxy, without a trusted-proxy allowlist",
+     "severity": "INFO",
+     "confidence": 0.8,
+     "fix_risk": "low",
+     "spec_requirement": "Behind-proxy handling; audit logs and login rate-limit must attribute the correct client IP.",
+     "observed": "client_ip() takes the first token of X-Forwarded-For verbatim whenever behind_proxy=True (default). A client able to reach the app directly could spoof XFF to poison the IP recorded in the audit trail and to evade the IP component of login lockout. In the deployed topology this is mitigated: the app binds 127.0.0.1 behind nginx (per EVIDENCE), and lockout also keys on username, so account lockout still functions. Flagged only because there is no trusted-proxy check.",
+     "evidence": "dashboard/server.py:157-162 (returns forwarded.split(',')[0] with no proxy validation); lockout query keys on username OR ip in dashboard/security.py:173-182.",
+     "proposed_fix": "Validate that request.client.host is a trusted proxy before honouring XFF, or use Starlette's ProxyHeadersMiddleware with an explicit trusted-hosts list."
+    },
+    {
+     "id": "DASHSEC-I3",
+     "phase": "18",
+     "title": "bcrypt silently truncates passwords beyond 72 bytes while the API advertises up to 256 characters",
+     "severity": "INFO",
+     "confidence": 0.85,
+     "fix_risk": "low",
+     "spec_requirement": "Password hashing with a strong algorithm.",
+     "observed": "hash_password uses bcrypt (good, cost 12), but bcrypt ignores bytes past position 72. password_problem and the LoginBody/PasswordBody models accept up to 256 characters, so two distinct >72-byte passwords sharing the first 72 bytes are treated as identical. Low practical impact given the 12-char minimum, but the advertised 256-char ceiling is misleading.",
+     "evidence": "dashboard/security.py:291-299 (bcrypt.hashpw/checkpw); dashboard/security.py:307-317 (max 256); dashboard/server.py:64-65,87-88 (max_length=256).",
+     "proposed_fix": "Pre-hash with SHA-256 before bcrypt (base64 the digest) to remove the 72-byte cap, or cap password length at 72 bytes in password_problem and document it."
+    },
+    {
+     "id": "DASHSEC-P1",
+     "phase": "18",
+     "title": "Password hashing uses bcrypt (cost 12) with timing-equalized login",
+     "severity": "PASS",
+     "spec_requirement": "Password hashing (which algo?).",
+     "observed": "Passwords hashed with bcrypt at cost factor 12; verification via bcrypt.checkpw wrapped to fail closed on malformed hashes. Login always runs a bcrypt comparison against a module-level dummy hash when the user is missing, so absent-user and wrong-password take the same time (no user enumeration). Password policy enforces >=12 chars and >=3 character classes.",
+     "evidence": "dashboard/security.py:291-317 (hash_password bcrypt gensalt rounds=12, _DUMMY_HASH, password_problem); dashboard/security.py:194-200 (constant-time login path)."
+    },
+    {
+     "id": "DASHSEC-P2",
+     "phase": "18",
+     "title": "Server-side opaque sessions with HttpOnly/SameSite/Secure cookie flags",
+     "severity": "PASS",
+     "spec_requirement": "Secure sessions; cookie flags (HttpOnly/SameSite/Secure).",
+     "observed": "Session ids are 256-bit secrets.token_urlsafe tokens stored server-side (nothing decodable client-side; instantly revocable). Login cookie is set HttpOnly=True, SameSite=Lax, Secure=cookie_secure (default True), Path=/, Max-Age=session_ttl. Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, HSTS under TLS/proxy) applied globally.",
+     "evidence": "dashboard/security.py:211-220 (_create_session); dashboard/server.py:234-237 (set_cookie flags); dashboard/server.py:40-50,138-152 (CSP + headers)."
+    },
+    {
+     "id": "DASHSEC-P3",
+     "phase": "18",
+     "title": "CSRF protection: mandatory X-CSRF-Token on every state-changing request, compared constant-time",
+     "severity": "PASS",
+     "spec_requirement": "CSRF protection.",
+     "observed": "Every non-safe method requires the session's CSRF token in the X-CSRF-Token header, verified with hmac.compare_digest against the server-stored per-session token; a cookie alone is never sufficient. Enforced both in the require() dependency factory and in _authorise_write for data-dependent routes. Frontend attaches the header on all non-GET/HEAD requests.",
+     "evidence": "dashboard/security.py:247-249 (verify_csrf); dashboard/server.py:183-189 (require), 680-689 (_authorise_write); dashboard/static/app.js:107-108 (X-CSRF-Token header)."
+    },
+    {
+     "id": "DASHSEC-P4",
+     "phase": "18",
+     "title": "Role-based access enforced server-side with last-admin protection",
+     "severity": "PASS",
+     "spec_requirement": "Role-based access.",
+     "observed": "Three roles (admin/trader/viewer) with an explicit permission map checked server-side per route via Principal.can(); the UI only hides, it is not the control. Live vs paper control require distinct permissions (control.live/control.paper). set_role/set_active/delete_user refuse to demote/disable/delete the last remaining admin.",
+     "evidence": "dashboard/security.py:29-61 (ROLES/PERMISSIONS/Principal.can), 126-144,161-168 (last-admin guards); dashboard/server.py:174-191 (require), 531-541 (per-target control perms)."
+    },
+    {
+     "id": "DASHSEC-P5",
+     "phase": "18",
+     "title": "Both idle and absolute session timeouts enforced on session resolution",
+     "severity": "PASS",
+     "spec_requirement": "Session timeout (idle + absolute).",
+     "observed": "resolve() revokes the session when now > expires_ts (absolute TTL, default 12h) or when now - last_seen_ts > idle timeout (default 2h), otherwise touches last_seen_ts. Expired sessions are deleted, not just rejected. purge_expired and prune also clean session rows. (Note: enforced for REST; see DASHSEC-W1 for the WebSocket gap.)",
+     "evidence": "dashboard/security.py:225-245 (resolve absolute+idle checks), 269-270 (purge_expired); dashboard/config.py:70-71 (ttl 43200 / idle 7200); dashboard/db.py:214 (prune sessions)."
+    },
+    {
+     "id": "DASHSEC-P6",
+     "phase": "18",
+     "title": "Login lockout / rate-limit per username-or-IP",
+     "severity": "PASS",
+     "spec_requirement": "Login lockout / rate-limit.",
+     "observed": "After max_attempts (default 6) failed attempts within the lockout window (default 300s) for a given username OR IP, further logins are rejected with HTTP 429 and a remaining-seconds message; failed attempts are recorded to login_attempts and successes are excluded from the count. Attempts recorded even during lockout.",
+     "evidence": "dashboard/security.py:173-209 (is_locked_out, login gate, _record_attempt); dashboard/config.py:74-75 (defaults 6/300)."
+    },
+    {
+     "id": "DASHSEC-P7",
+     "phase": "18",
+     "title": "Append-only audit trail on privileged actions with secret masking",
+     "severity": "PASS",
+     "spec_requirement": "Audit logs.",
+     "observed": "Every privileged/state-changing action (login/logout, password change, user CRUD, service control, emergency stop, kill-switch clear, backup, export, reconnect, notification test, journal edits) writes an audit row with actor, role, action, target, detail, ip, ok; detail is passed through mask_secrets. The audit table is INSERT-only in code (no UPDATE/DELETE except retention prune at 90 days).",
+     "evidence": "dashboard/security.py:275-285 (audit INSERT + mask_secrets); dashboard/server.py:238,252,276,415,473,495,544,560,573,581,604,637,654,666 (audit calls); dashboard/db.py:61-72,206 (audit schema + 90d prune)."
+    },
+    {
+     "id": "DASHSEC-P8",
+     "phase": "18",
+     "title": "Secret masking on config, audit detail, log/journal tails, and notification bodies",
+     "severity": "PASS",
+     "spec_requirement": "Secret masking / secrets exposure.",
+     "observed": "mask_secrets redacts 64-hex keys and keyed secret=value patterns (secret/passphrase/password/token/api_key/private_key) and is applied to audit detail, served log tails, journal tails, and notification bodies. Config.redacted() replaces secret fields with 'set (N chars)'. EVIDENCE confirms served HTML and endpoints leak zero secrets, and credentials are read from env.txt not exposed to the dashboard.",
+     "evidence": "dashboard/security.py:327-354 (mask_secrets, mask_address); dashboard/config.py:16-19,264-272 (_SECRET_FIELDS, redacted); dashboard/server.py:437,444 (masked tails); dashboard/notifications.py:80 (masked body); EVIDENCE.md:29."
+    },
+    {
+     "id": "DASHSEC-P9",
+     "phase": "12",
+     "title": "Orders table exposes all required fields from real exchange records",
+     "severity": "PASS",
+     "spec_requirement": "Orders table fields: Order ID, Time, Market, Direction, Price, Quantity, Status, Filled %, Remaining, Fees, Execution time, Exchange response, Error \u2014 from real exchange info.",
+     "observed": "engine_view.orders selects real engine/exchange columns (exchange_order_id, ts_created, market, side/action, price, size, filled_size, avg_fill_price, fees, status, last_error, exchange_response, execution_ms) and derives remaining_size and filled_pct honestly. The UI renders exactly these 13 columns plus Type/Avg-fill; execution_ms and exchange_response render '\u2014' when null (not fabricated), and the empty table shows 'No orders recorded' rather than fake zeros \u2014 consistent with the observed 0 orders across all DBs.",
+     "evidence": "dashboard/engine_view.py:20-25,76-107,269-284 (columns + _decorate_order); dashboard/static/app.js:887-904 (13-field table + honest '\u2014'); EVIDENCE.md:44 (orders(0))."
+    },
+    {
+     "id": "DASHSEC-P10",
+     "phase": "13",
+     "title": "Trade journal auto-records completed trades idempotently; screenshots optional and non-blocking",
+     "severity": "PASS",
+     "spec_requirement": "Trade journal auto-records COMPLETED trades with required fields; screenshots optional and never block trading.",
+     "observed": "journal.sync imports rows from the engine's completed-trades table (INSERT OR IGNORE on UNIQUE(mode,trade_id)) with market, strategy, qty, entry/exit price+ts, duration, pnl, entry/exit reason and confidence; the sync runs in the dashboard's housekeeping loop, fully decoupled from the trading engines, so it cannot affect order execution. Screenshots are user-optional, validated (image data-URL only, 2 MB cap, base64-checked) and stored path-traversal-safe under uploads; user annotations are never overwritten by re-import.",
+     "evidence": "dashboard/journal.py:44-73 (idempotent auto-import), 142-171 (screenshot validation + safe path); dashboard/db.py:87-113 (journal schema, UNIQUE(mode,trade_id)); dashboard/state.py:142-160 (housekeeping loop, separate from engines)."
+    },
+    {
+     "id": "DASHSEC-P11",
+     "phase": "15",
+     "title": "Alerts: browser notifications always on; email/telegram/discord optional and never a startup failure",
+     "severity": "PASS",
+     "spec_requirement": "Alerts for listed events; email/telegram/discord OPTIONAL; missing creds => not configured, not a startup failure.",
+     "observed": "Browser/dashboard notifications require no config and are always enabled; the listed events are covered (fill, order_rejected/failed, risk_halt, startup_failed, shutdown, cancel_all, trade_closed, profit_target, stop_loss, low_balance, allowance_issue, high cpu/mem/disk, ws disconnect, engine_stale, api_failure, service_failed). Email/Telegram/Discord default disabled; validate() only demands creds when a channel's *_ENABLED flag is true, so absent creds never fail startup. channel_status honestly reports each channel enabled/off (UI shows 'off'), and per-channel delivery failures are isolated (asyncio.gather return_exceptions) and never block the alert loop.",
+     "evidence": "dashboard/notifications.py:37-46 (event map), 66-96 (emit always broadcasts browser), 248-270 (isolated delivery), 331-343 (channel_status); dashboard/config.py:126-141,240-245 (channels default off, conditional validation); dashboard/static/app.js:1526-1534 (per-channel on/off/error display)."
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "DASHSEC-W1",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Independently reproduced from source. The WS endpoint (dashboard/server.py:292) resolves the principal exactly once at connect and then loops on receive_json (server.py:304-306) with no re-validation; _handle_ws_message (server.py:715-725) only serves ping/subscribe/snapshot, so broadcasts (hub.py:84-94) keep flowing with zero session re-check. The only socket-closing call, hub.revoke_session (hub.py:68-73), is invoked from exactly two routes \u2014 logout (server.py:251) and self-service password change (server.py:275) \u2014 confirmed by grep. Admin-initiated revocations (set_active security.py:138, delete_user security.py:143, admin password reset via patch_user->change_password security.py:159, patch_user server.py:640-656) all funnel to revoke_user_sessions (security.py:261-262), which is pure 'DELETE FROM sessions' and never touches the hub. Idle/absolute TTL is enforced only in resolve() (security.py:236-241), which the WS never re-runs, so expired sessions also keep streaming. Result: a disabled/deleted/password-reset user, or any session past its TTL, keeps receiving live portfolio/engine/live-account/notification snapshots over the already-open socket until they voluntarily disconnect, while all subsequent REST calls correctly 401. WARN (not higher) is correct: dashboard binds 127.0.0.1 only, the WS surface is strictly read-only (no order/control actions), and the two most common revocation events already close the socket \u2014 residual risk is information continuation on one channel, not control or remote exposure. Proposed fix is sound and low-risk since hub.revoke_session plumbing already exists.",
+     "evidence": "dashboard/server.py:292 (resolve once at accept), 304-306 (receive_json loop, no re-check), 715-725 (WS msgs read-only), 251 & 275 (only hub.revoke_session callers); dashboard/security.py:133-138,140-144,146-159 (admin paths call revoke_user_sessions), 236-241 (idle/expiry only in resolve), 261-262 (revoke_user_sessions = DB DELETE only); dashboard/hub.py:68-73 (revoke_session closes sockets), 84-94 (broadcast has no session validation)"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "db_arch",
+  "component": "Database",
+  "analyze": {
+   "lane": "db_arch",
+   "component": "Database",
+   "component_status": "WARN",
+   "summary": "Database isolation, WAL, read-only dashboard access, schema correctness, and dashboard-side retention (candles/notifications/sessions/audit/login) are all implemented correctly and match runtime evidence. The one real gap: the per-engine telemetry DB (data/{live,paper}/engine.db) has NO retention at all \u2014 the equity table (appended every ~15s) and the events table grow unbounded; prune() only covers the dashboard DB. Practical disk-fill risk is low on the 80GB VPS (~200MB/yr/engine), so this is a WARN, not a blocker, but the spec explicitly requires equity-sample and event retention and it is entirely unimplemented. Minor: no index on `strategy` (spec lists it, but no query filters by it) and no VACUUM to reclaim space after deletes.",
+   "findings": [
+    {
+     "id": "db_arch-01",
+     "phase": "19",
+     "title": "Engine telemetry DB (equity samples + events) has no retention \u2014 unbounded growth",
+     "severity": "WARN",
+     "confidence": 0.95,
+     "spec_requirement": "Retention/rotation so the 80GB disk cannot silently fill; DB growth bound must include equity samples and events.",
+     "observed": "polybot/telemetry/recorder.py appends one equity row every equity_interval_s (default 15.0s, publisher.py:25,124-136) via INSERT OR REPLACE keyed on ts=now_s() (recorder.py:247-255), and appends events (recorder.py:269-271), but the EngineRecorder writer thread never deletes/prunes anything. The only prune() in the codebase (dashboard/db.py:202-214, invoked hourly at dashboard/state.py:153-158) operates solely on the dashboard DB tables (audit/notifications/login_attempts/candles/sessions) \u2014 it never touches data/{live,paper}/engine.db. There is no equity/events retention, no VACUUM, and no scheduled cleanup on the engine side. At 15s cadence the equity table gains ~5760 rows/day (~2.1M rows/yr) per engine and only grows; events grow with event volume.",
+     "evidence": "polybot/telemetry/recorder.py:162-165,247-255,269-271 (append-only, no delete); polybot/telemetry/publisher.py:25,124-136 (15s equity cadence); polybot/telemetry/schema.py:106-118,143-152 (equity/events tables, no retention DDL); dashboard/db.py:202-214 (prune covers dashboard DB only); dashboard/state.py:153-158 (prune scheduled only for self.db).",
+     "gap": "No mechanism bounds equity or events rows in engine.db; requirement's explicit 'equity samples, events' retention is unmet. Disk-fill risk is low today (5% used, ~200MB/yr/engine) but growth is strictly monotonic and unbounded.",
+     "proposed_fix": "Add a prune step to EngineRecorder run on a low cadence from the writer thread (the sole writer, so it is WAL-safe): DELETE FROM equity WHERE ts < now-N_days (or keep last K rows); DELETE FROM events WHERE ts < now-M_days. Make N/M/K configurable (e.g. EQUITY_RETENTION_DAYS, EVENT_RETENTION_DAYS). Optionally run PRAGMA wal_checkpoint(TRUNCATE)/incremental VACUUM periodically to reclaim space.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "db_arch-02",
+     "phase": "19",
+     "title": "Physical DB isolation between live/paper/dashboard is correctly implemented",
+     "severity": "PASS",
+     "confidence": 0.98,
+     "spec_requirement": "Separate DBs data/{live,paper,dashboard}; nothing shared so paper can never read/write live state.",
+     "observed": "paths.py derives DATA_ROOT and returns per-mode ModePaths with distinct root/logs/state/db under data/<mode>/engine.db, plus a separate DashboardPaths under data/dashboard/. mode_paths() rejects unknown modes. Dashboard opens each engine DB by its own mode path (dashboard/state.py:50-51). Matches EVIDENCE: separate data/{live,paper,dashboard} trees, each with own logs/+state/, live & paper engine.db distinct.",
+     "evidence": "polybot/config/paths.py:22,24,46-61,81-90; dashboard/state.py:50-51; EVIDENCE.md 'separate trees: data/live, data/paper, data/dashboard'.",
+     "gap": "None.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-03",
+     "phase": "19",
+     "title": "WAL enabled on all writable DBs; dashboard reads engine DBs strictly read-only (mode=ro) and cannot block the engine",
+     "severity": "PASS",
+     "confidence": 0.97,
+     "spec_requirement": "WAL for writable DBs; dashboard reads engine DBs READ-ONLY (mode=ro) and cannot block the engine.",
+     "observed": "ENGINE_SCHEMA and DASHBOARD_SCHEMA both set PRAGMA journal_mode=WAL, synchronous=NORMAL (schema.py:14-15, db.py:25-26). connect() opens read_only via file:...?mode=ro URI (schema.py:170-172); EngineReader always calls connect(read_only=True) (db.py:248) and connect(source, read_only=True) is used for backups (control.py:306). No code path opens an engine DB writable from the dashboard. WAL + read-only means readers never block the writing engine; busy_timeout=8000 set (schema.py:177). Matches EVIDENCE (all DBs WAL, dashboard opens mode=ro, reads succeed).",
+     "evidence": "polybot/telemetry/schema.py:14-15,163-178; dashboard/db.py:25-26,237-274; dashboard/control.py:306; EVIDENCE.md 'all WAL, opened mode=ro by dashboard'.",
+     "gap": "None.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-04",
+     "phase": "19",
+     "title": "EngineReader degrades gracefully (no data, no raise) and serialises reads on its own connection",
+     "severity": "PASS",
+     "confidence": 0.95,
+     "spec_requirement": "Dashboard must keep rendering when an engine has not started / DB missing; reads must not error out the dashboard.",
+     "observed": "EngineReader.available checks path.is_file(); _connection() returns None when the file is absent and throttles reconnect attempts to once per 2s; query()/query_one()/scalar() return []/None/default and reset the connection on sqlite errors (db.py:233-285). All access is guarded by an RLock so concurrent reads from the broadcast loop, journal.sync, and export handlers serialise safely on the shared read-only connection.",
+     "evidence": "dashboard/db.py:233-285.",
+     "gap": "None.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-05",
+     "phase": "19",
+     "title": "Required indexes on timestamp/market/status/order_id/trade_id are present",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Indexes on timestamp/market/strategy/trade_id/order_id/status.",
+     "observed": "timestamp: idx_orders_created, idx_fills_ts, idx_trades_exit, idx_events_ts (schema.py:45,65,89,152) plus dashboard idx_*_ts. market: idx_orders_market (schema.py:47). status: idx_orders_status (schema.py:46). order_id: orders.client_id PRIMARY KEY (implicit index, schema.py:20). trade_id: trades.id PRIMARY KEY + journal UNIQUE(mode,trade_id) implicit index (schema.py:69, db.py:112). Matches EVIDENCE index list (events_ts, fills_ts, orders_created/market/status, trades_exit).",
+     "evidence": "polybot/telemetry/schema.py:20,45-47,65,69,89,152; dashboard/db.py:112.",
+     "gap": "None for the columns actually queried.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-06",
+     "phase": "19",
+     "title": "No index on `strategy` column (spec lists it) \u2014 but no query filters by strategy",
+     "severity": "INFO",
+     "confidence": 0.85,
+     "spec_requirement": "Indexes on ... strategy ...",
+     "observed": "No idx on `strategy` exists on any table (orders/fills/trades/strategy_state). However, no SQL in engine_view.py or control.py filters or groups by strategy in the DB \u2014 per-strategy aggregation is done in Python after fetching all trades (engine_view.py:159,297-300 -> analytics.group_performance). strategy_state is already keyed by (strategy, market_id) PK. So the missing index has no measurable impact on current query patterns.",
+     "evidence": "polybot/telemetry/schema.py:19-152 (no strategy index); dashboard/engine_view.py:115-120,155-211 (no WHERE strategy=); dashboard/analytics grouping in Python.",
+     "gap": "Literal spec index list is not fully satisfied, but it is unused by any query so effectively a no-op.",
+     "proposed_fix": "If strategy-scoped SQL filtering is ever added, add CREATE INDEX idx_trades_strategy ON trades(strategy) and idx_orders_strategy ON orders(strategy). Otherwise safe to leave.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-07",
+     "phase": "19",
+     "title": "Schema for orders/fills/trades/positions/equity/events/strategy_state is correct and complete",
+     "severity": "PASS",
+     "confidence": 0.95,
+     "spec_requirement": "Schema correctness for orders/fills/trades/positions/equity/events/strategy_state.",
+     "observed": "All seven tables exist with sensible types, PKs and NOT NULL constraints: orders(client_id PK, timestamps, market/side/action/price/size/status/strategy), fills(autoinc id, ts, client_id, market, price/size/fee/realized_pnl), trades(FIFO round-trips with entry/exit/pnl/return_pct/r_multiple), positions(PK market_id,side), equity(ts PK + balance/cash/positions_value/equity/pnl/exposure/open_orders/open_positions), events(id,ts,level,kind,message,data), strategy_state(PK strategy,market_id). Upserts use ON CONFLICT correctly (recorder.py:220-268). Round-trip assembly folds fills into FIFO lots and restores lots from positions on restart (recorder.py:276-322). Matches EVIDENCE (positions 2, equity 54/59, strategy_state 1, engine_state present).",
+     "evidence": "polybot/telemetry/schema.py:18-159; polybot/telemetry/recorder.py:217-322.",
+     "gap": "None.",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-08",
+     "phase": "19",
+     "title": "Dashboard-side retention (candles/notifications/sessions/audit/login) and backup rotation are correctly bounded",
+     "severity": "PASS",
+     "confidence": 0.92,
+     "spec_requirement": "Bound DB growth: candles retention, notifications, sessions cleanup; disk cannot silently fill.",
+     "observed": "DashboardDB.prune() deletes audit>90d, read notifications>30d, login_attempts>14d, expired sessions, and keeps the newest candle_retention (default 5000) candles per market_key via a correlated subquery (db.py:202-214). candles are additionally bounded to 24 markets * 5000 rows. prune() runs hourly (state.py:153-158); sessions also purged every 30s (state.py:149, security.py:269-270). Engine-DB backups use the WAL-safe backup API from a read-only source and keep only the newest 14 sets (control.py:238-246,304-317).",
+     "evidence": "dashboard/db.py:202-214; dashboard/state.py:143-160; dashboard/security.py:269-270; dashboard/config.py:103,193; dashboard/control.py:238-246,304-317.",
+     "gap": "None for these tables (see db_arch-01 for the engine-DB tables that are NOT covered).",
+     "proposed_fix": "",
+     "fix_risk": "none"
+    },
+    {
+     "id": "db_arch-09",
+     "phase": "19",
+     "title": "Deletes never reclaim disk (no VACUUM/auto_vacuum) after pruning",
+     "severity": "INFO",
+     "confidence": 0.8,
+     "spec_requirement": "Disk cannot silently fill.",
+     "observed": "No PRAGMA auto_vacuum, no VACUUM, and no incremental_vacuum anywhere. SQLite DELETEs leave free pages in the file (reused, not returned to the OS), so the dashboard DB size after prune stays at its high-water mark. This is harmless for the bounded dashboard tables (candles capped, so the file plateaus), but combined with db_arch-01 the engine.db has no delete path at all so it grows monotonically.",
+     "evidence": "grep found no VACUUM/auto_vacuum in dashboard/ or polybot/; dashboard/db.py:202-214 (delete-only prune).",
+     "gap": "Space is not physically reclaimed after retention deletes; acceptable given bounded dashboard tables but worth noting if engine retention (db_arch-01) is added.",
+     "proposed_fix": "When adding engine retention, pair periodic DELETE with PRAGMA wal_checkpoint(TRUNCATE) and either PRAGMA auto_vacuum=INCREMENTAL (set at DB creation) + periodic incremental_vacuum, or an occasional VACUUM during low activity.",
+     "fix_risk": "low"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "db_arch-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Independently verified every claim. recorder.py's writer thread (_run/_apply, lines 187-271) is strictly INSERT-only with no DELETE/prune/VACUUM/wal_checkpoint anywhere on the engine side. equity is INSERT OR REPLACE keyed on ts=now_s() (recorder.py:162-165,247-255) at a 15s cadence (publisher.py:25,124-136) so each sample has a unique ts => monotonic ~5760 rows/day/engine growth, not overwrite. events append-only (recorder.py:269-271). schema.py:106-118,143-152 define equity/events with no retention DDL. The only prune() (dashboard/db.py:202-214) operates on dashboard-DB tables only (audit/notifications/login_attempts/candles/sessions) and is scheduled only against self.db (dashboard/state.py:153-156); EngineReader has no prune, and no RotatingFileHandler/logrotate exists. The dashboard prune docstring explicitly states the design intent to bound growth on the 80GB VPS, so omitting the engine equity/events tables is a genuine completeness gap against the retention requirement. WARN (not higher) is correct: row sizes are tiny (~hundreds of MB/yr/engine) against a 79GB disk at 5% used, so practical time-to-fill is years, not imminent. Proposed fix (prune from the sole writer thread, WAL-safe) is valid.",
+     "evidence": "polybot/telemetry/recorder.py:162-165,187-271 (append-only writer); publisher.py:25,124-136 (15s equity cadence); schema.py:106-118,143-152 (no retention DDL); dashboard/db.py:202-214 (prune = dashboard DB only); dashboard/state.py:153-156 (prune scheduled only for self.db); no log-rotation handlers found in polybot/dashboard"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "logging",
+  "component": "Logging",
+  "analyze": {
+   "lane": "logging",
+   "component": "Logging",
+   "component_status": "WARN",
+   "summary": "Secret hygiene is strong: no private key / API secret / passphrase / auth token is ever logged; preflight uses non-reversible SHA-256 fingerprints and masked addresses; the paper unit strips wallet creds from the environment entirely. Per-mode log isolation is correct and enforced at the kernel level (ProtectSystem=strict + ReadWritePaths=data/<mode>), so the legacy top-level logs tree is provably inert for the running services. The real gaps are operational: in-app logging uses plain logging.FileHandler (no rotation) and deploy/install.sh installs NO logrotate config despite the docs claiming one, so a fresh install grows all per-domain log files unbounded; a 15s INFO HEARTBEAT compounds this. One minor secret-hygiene nit: the auto-generated bootstrap admin password is written in cleartext to journald.",
+   "findings": [
+    {
+     "id": "LOG-01",
+     "phase": "20",
+     "title": "No in-app log rotation and no logrotate provisioned by installer (unbounded per-domain log growth)",
+     "severity": "WARN",
+     "spec_requirement": "Log rotation configured (in-app RotatingFileHandler or logrotate) so logs cannot silently fill the disk.",
+     "observed": "setup_logging() creates plain logging.FileHandler instances for errors.log and every domain file (trade/orders/strategy/execution/websocket/wallet/api). None are RotatingFileHandler/TimedRotatingFileHandler. deploy/install.sh contains ZERO logrotate references and ships no logrotate asset (find/grep both empty). Docs/CLOB_V2_MIGRATION.md:185-187 claims '/etc/logrotate.d/bot-s1: daily rotation, rotate 14, compress, copytruncate' but that file is a hand-placed system file referencing the legacy path (bot-s1) and user (botuser); it is not created or verified by the idempotent installer. A fresh install via deploy/install.sh to /opt/polybot therefore has no rotation for any of the 8 file handlers under data/{live,paper}/logs. Only the console mirror (journald) self-rotates.",
+     "evidence": "polybot/logging/loggers.py:102 (errors = logging.FileHandler(...)), polybot/logging/loggers.py:115 (file_handler = logging.FileHandler(...)); deploy/install.sh (no logrotate anywhere; mkdir at line 59 only); Docs/CLOB_V2_MIGRATION.md:185-187 (unbacked claim).",
+     "proposed_fix": "Either switch setup_logging to logging.handlers.RotatingFileHandler(maxBytes=~10MB, backupCount=5) for errors.log and each domain file, OR add deploy/logrotate/polybot to the repo and have install.sh copy it to /etc/logrotate.d/polybot (with copytruncate since the app holds handles open) referencing the real install path/user. In-app RotatingFileHandler is the more reproducible, self-contained fix.",
+     "fix_risk": "low",
+     "confidence": 0.95
+    },
+    {
+     "id": "LOG-02",
+     "phase": "20",
+     "title": "15s INFO HEARTBEAT with full snapshot written every cycle to execution.log",
+     "severity": "WARN",
+     "spec_requirement": "Avoid excessive heartbeat logging.",
+     "observed": "heartbeat_loop logs self._log.info('HEARTBEAT', extra={'health': snap}) every heartbeat_interval_s (default 15.0s) via the polybot.execution logger, i.e. ~4/min => ~5,760 lines/day per engine (live + paper), each carrying the full health snapshot. It writes to execution.log (plain FileHandler, no rotation per LOG-01) and mirrors to journald. The same snapshot is already atomically published to status.json for machine consumption, making the per-cycle INFO line redundant for monitoring. This is the primary disk-fill vector when combined with LOG-01.",
+     "evidence": "polybot/monitoring/health.py:66 (self._log.info('HEARTBEAT', ...)); polybot/config/settings.py:153 & :256 (heartbeat_interval_s default 15.0); polybot/monitoring/health.py:36 (logger defaults to polybot.execution).",
+     "proposed_fix": "Demote the routine heartbeat to DEBUG (so it stays out of INFO files/journal), or log it only on state change / at a much longer cadence, and rely on status.json + metrics gauges for the per-cycle feed already produced at health.py:67-71.",
+     "fix_risk": "low",
+     "confidence": 0.85
+    },
+    {
+     "id": "LOG-03",
+     "phase": "20",
+     "title": "Auto-generated bootstrap admin password logged in cleartext to journald",
+     "severity": "WARN",
+     "spec_requirement": "NEVER log a password; mask credentials.",
+     "observed": "When no DASHBOARD_ADMIN_PASSWORD is configured, bootstrap_admin() generates secrets.token_urlsafe(18) and returns it; state.start() then logs it at WARNING: 'INITIAL ADMIN CREATED \u2014 username %r, password: %s'. This is the standard print-once pattern (the account is created with must_change_pw=True and the value is not returned when a password is configured), and install.sh documents retrieving it via journalctl. However it does write a valid, currently-active credential in cleartext to the systemd journal, where it persists until journal rotation and remains valid until the operator changes it. Strictly violates 'never log a password'.",
+     "evidence": "dashboard/state.py:78 (log.warning('INITIAL ADMIN CREATED \u2014 username %r, password: %s', ...)); dashboard/security.py:98-104 (generated = secrets.token_urlsafe(18); returned only when auto-generated); deploy/install.sh:152-155 (documents grep 'INITIAL ADMIN').",
+     "proposed_fix": "Write the generated bootstrap password to a root-only 0600 file (e.g. data/dashboard/INITIAL_ADMIN_PASSWORD) and log only its location, or require the operator to set DASHBOARD_ADMIN_PASSWORD at install so nothing is generated. Keep must_change_pw=True.",
+     "fix_risk": "low",
+     "confidence": 0.8
+    },
+    {
+     "id": "LOG-04",
+     "phase": "20",
+     "title": "Dashboard writes no files under data/dashboard/logs (journald only)",
+     "severity": "INFO",
+     "spec_requirement": "Separate data/{live,paper,dashboard}/logs.",
+     "observed": "The dashboard configures only logging.basicConfig() -> stdout (captured by journald, StandardOutput=journal) and does not create or write a data/dashboard/logs tree; install.sh:59 creates data/dashboard/{backups,uploads,certs} but no dashboard/logs. This is acceptable (journald self-rotates and access_log is disabled with noisy httpx/uvicorn loggers pinned to WARNING), but the 'data/dashboard/logs' directory implied by the spec is not actually used by the app. Noted for the PASS/FAIL table honesty, not a defect.",
+     "evidence": "run_dashboard.py:26-35 (_configure_logging -> basicConfig, noisy loggers -> WARNING); run_dashboard.py:86 (access_log=False); deploy/systemd/polybot-dashboard.service:49-50 (StandardOutput/Error=journal); deploy/install.sh:59 (no dashboard/logs created).",
+     "proposed_fix": "No code change required; if a file trail is desired for the dashboard, route it through setup_logging into data/dashboard/logs with rotation (see LOG-01). Otherwise document that the dashboard intentionally logs to journald.",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "LOG-05",
+     "phase": "20",
+     "title": "No secret is logged anywhere; credentials masked with non-reversible fingerprints",
+     "severity": "PASS",
+     "spec_requirement": "NEVER log private key / API secret / auth token / password; mask wallet creds; verify no secret is logged anywhere.",
+     "observed": "A codebase-wide grep for logger/print statements referencing private_key/api_secret/passphrase/password/token/credential surfaced only safe values: public wallet/signer addresses, market token IDs truncated to [:12], SHA-256 fingerprints, and repr(exc) error strings. No raw private key, API secret, passphrase, or auth token is ever passed to a logger or print. preflight explicitly fingerprints secrets (_fp = sha256[:8]) and masks addresses (_mask_addr), and never prints auth.api_key even though it holds it. exchange/auth.py logs nothing sensitive.",
+     "evidence": "scripts/preflight.py:27-35 (_fp SHA-256 fingerprint, _mask_addr), :113-120 (api_key used but not printed; only addresses/sig-type printed); dashboard/live_sync.py:135 (logs public signer address only); dashboard/market_feed.py:440 (token[:12]); grep for print(private_key|api_secret|passphrase|...) returned empty.",
+     "proposed_fix": "None.",
+     "fix_risk": "none",
+     "confidence": 0.9
+    },
+    {
+     "id": "LOG-06",
+     "phase": "20",
+     "title": "Legacy top-level logs tree is provably inert for running services (kernel-enforced)",
+     "severity": "PASS",
+     "spec_requirement": "Confirm the big legacy /opt/.../logs tree is inert (not written by current services).",
+     "observed": "Each engine's default log_dir resolves to its isolated data tree (settings.log_dir = mode_paths(<mode>).logs => data/live/logs, data/paper/logs). Beyond the default, the systemd units run with ProtectSystem=strict and ReadWritePaths limited to /opt/polybot/data/<mode>, so the process physically cannot write to the top-level /opt/*/logs directory even if misconfigured. This corroborates the EVIDENCE runtime finding that the legacy /opt/bot-s1/logs tree is stale-but-harmless.",
+     "evidence": "polybot/config/settings.py:191,194,230,281 (log_dir default -> mode_paths(mode).logs); deploy/systemd/polybot-live.service:30 (ProtectSystem=strict), :41 (ReadWritePaths=/opt/polybot/data/live); deploy/systemd/polybot-paper.service:43 (ReadWritePaths=/opt/polybot/data/paper).",
+     "proposed_fix": "None; optionally delete the legacy top-level logs tree during install for tidiness.",
+     "fix_risk": "none",
+     "confidence": 0.95
+    },
+    {
+     "id": "LOG-07",
+     "phase": "20",
+     "title": "Per-mode multi-file domain logging with aggregated errors.log implemented correctly",
+     "severity": "PASS",
+     "spec_requirement": "Separate data/{live,paper}/logs with structured logging.",
+     "observed": "setup_logging builds a non-propagating 'polybot' root with a console mirror + errors.log (WARNING+) and one dedicated FileHandler per domain (trade/orders/strategy/execution/websocket/wallet/api) under the mode-specific log_dir, with ISO-8601 UTC timestamps and structured k=v (or JSON via LOG_JSON). install.sh pre-creates data/{paper,live}/logs and the units grant matching ReadWritePaths. Dashboard additionally suppresses httpx/httpcore/websockets/uvicorn.access noise to WARNING and disables uvicorn access_log, preventing per-request log spam.",
+     "evidence": "polybot/logging/loggers.py:83-120 (setup_logging), :27-35 (_DOMAINS); polybot/main.py:431 & polybot/paper/main.py:354 (setup_logging(settings.log_dir,...)); deploy/install.sh:59 (mkdir data/{paper,live}/logs); run_dashboard.py:34-35 & :86 (noise suppression, access_log=False).",
+     "proposed_fix": "None (rotation gap tracked separately in LOG-01).",
+     "fix_risk": "none",
+     "confidence": 0.9
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "LOG-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: loggers.py:102 (errors.log) and :115 (per-domain files) both use plain logging.FileHandler; no RotatingFileHandler/TimedRotatingFileHandler anywhere. grep for logrotate/rotate across deploy/, polybot/, dashboard/ returns nothing and find deploy -iname '*logrotate*' is empty. install.sh installs to /opt/polybot (line 11) but Docs/CLOB_V2_MIGRATION.md:185-187 claims a hand-placed /etc/logrotate.d/bot-s1 owned by legacy user 'botuser' that the idempotent installer never creates. A fresh install has zero rotation for all 8 file handlers; only journald self-rotates the console mirror. Real defect, severity correct.",
+     "evidence": "polybot/logging/loggers.py:102,115; deploy/install.sh (no logrotate; mkdir line 59); Docs/CLOB_V2_MIGRATION.md:185-187 (unbacked legacy-path claim)"
+    },
+    {
+     "id": "LOG-02",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: health.py:66 emits self._log.info('HEARTBEAT', extra={'health': snap}) every heartbeat_interval_s (default 15.0 at settings.py:153 and :256) on the polybot.execution logger (health.py:36) into the non-rotating execution.log. The identical snapshot is already atomically written to status.json (health.py:67) and exported as gauges (health.py:68-71), so the per-cycle INFO line is redundant for monitoring. At ~5,760 lines/day carrying a full nested snapshot it is the primary disk-growth vector compounding LOG-01. The 15s cadence itself is a normal heartbeat interval, but logging the full snapshot at INFO to an unrotated file is genuinely excessive; WARN stands.",
+     "evidence": "polybot/monitoring/health.py:66,36,67-71; polybot/config/settings.py:153,256"
+    },
+    {
+     "id": "LOG-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: security.py:98-104 generates secrets.token_urlsafe(18) and returns it only in the auto-generated case; state.py:74-81 then logs it at WARNING via 'INITIAL ADMIN CREATED \u2014 username %r, password: %s'. create_user (security.py:106-119) inserts the account with active=1 and must_change_pw=True, so the logged value is a live, currently-valid credential written in cleartext to persistent journald, retained until journal rotation and valid until first-login change. install.sh:152-155 documents retrieving it via journalctl grep. Print-once + must_change_pw + localhost-only dashboard are genuine mitigations (already acknowledged in the finding), but it still literally logs an active password in cleartext, strictly violating 'never log a password.' WARN is appropriate.",
+     "evidence": "dashboard/state.py:78; dashboard/security.py:98-104,102,117; deploy/install.sh:152-155"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "systemd_vps",
+  "component": "Systemd + VPS Monitoring",
+  "analyze": {
+   "lane": "systemd_vps",
+   "component": "Systemd + VPS Monitoring",
+   "component_status": "WARN",
+   "summary": "The three-service systemd design is sound and largely meets the spec: independent polybot-live/paper/dashboard units, non-root templated User/Group, correct WorkingDirectory, WantedBy=multi-user (boot start), Restart=always, strong per-engine hardening (ProtectSystem=strict, SystemCallFilter=@system-service, minimal ReadWritePaths), resource ceilings sized to 2vCPU/4GB (total MemoryMax 2000M < 3.8Gi, total CPUQuota 190% < 200%), per-unit log separation, and comprehensive VPS monitoring (CPU/RAM/disk/network/uptimes/services/restarts/db+log sizes) with CPU/RAM/disk/service-failed thresholds wired into the alert engine. No BLOCKER/FAIL. Real defects: (1) StartLimitIntervalSec/StartLimitBurst are placed in [Service] in all three units where systemd ignores them, so the intended crash-loop cap never engages and Restart=always would restart forever; (2) source polybot-live.service does NOT encode Environment=ENABLE_LIVE_TRADING=false (paper does), so an idempotent install.sh re-run regenerates the unit and drops the manually-added runtime dry-run override; (3) install.sh never disables/removes the legacy bot-s1.service, leaving a less-sandboxed duplicate live unit installed; (4) no systemd-level health check (no WatchdogSec/Type=notify) so an alive-but-unhealthy process is never auto-remediated. Plus minor monitoring/deploy nits (no explicit db-unavailable alert, nginx upstream port 8787 vs deployed 8080, dashboard runs a redundant market-data collector rather than a shared read-only layer).",
+   "findings": [
+    {
+     "id": "SYS-01",
+     "phase": "3/23",
+     "title": "StartLimit directives in [Service] section are ignored by systemd; crash-loop cap never engages",
+     "severity": "WARN",
+     "confidence": 0.9,
+     "spec_requirement": "3 units restart on failure with sane crash-loop handling (give up if crash-looping).",
+     "observed": "polybot-live.service lines 15-16, polybot-paper.service lines 16-17, polybot-dashboard.service lines 15-16 place StartLimitIntervalSec/StartLimitBurst inside the [Service] section. Modern systemd only reads these keys in the [Unit] section; in [Service] they are parsed as unknown and ignored. Combined with Restart=always + RestartSec=5-10, a genuinely crash-looping engine would restart indefinitely instead of entering 'failed' after the intended 5-6 restarts, defeating the documented intent (paper comment: 'Give up only if it is crash-looping: 6 restarts inside 5 minutes').",
+     "evidence": "deploy/systemd/polybot-live.service:7,15-16; polybot-paper.service:7,16-17; polybot-dashboard.service:7,15-16",
+     "gap": "Rate-limit/backoff-cap is non-functional; no protection against a tight crash loop hammering the CPU/journal. EVIDENCE shows NRestarts=0 so this has not yet been exercised.",
+     "proposed_fix": "Move StartLimitIntervalSec= and StartLimitBurst= into the [Unit] section of each unit file (they may stay named StartLimitIntervalSec/StartLimitBurst). Keep RestartSec in [Service].",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-02",
+     "phase": "3/21",
+     "title": "Source polybot-live.service omits ENABLE_LIVE_TRADING=false; reinstall drops the runtime dry-run override",
+     "severity": "WARN",
+     "confidence": 0.85,
+     "spec_requirement": "Live engine must be safe by default; deployment must be reproducible/idempotent without regressing safety.",
+     "observed": "deploy/systemd/polybot-live.service sets no Environment=ENABLE_LIVE_TRADING (lines 21-24 only set PYTHONUNBUFFERED and a comment claiming 'leaving it unset means a dry-run'). By contrast polybot-paper.service:24 hardcodes Environment=ENABLE_LIVE_TRADING=false and line 25 UnsetEnvironment scrubs every wallet credential. EVIDENCE states the *deployed* /etc/systemd/system/polybot-live.service DOES contain ENABLE_LIVE_TRADING=false \u2014 i.e. it was added out-of-band and is NOT in source control. install.sh:100-102 regenerates the unit from this source file on every run ('Idempotent: re-running upgrades the units'), which would silently strip that dry-run override; the live engine's safety would then depend solely on env.txt (whose contents this audit cannot see) plus load_env_file override=False.",
+     "evidence": "deploy/systemd/polybot-live.service:21-24; deploy/systemd/polybot-paper.service:24-25; deploy/install.sh:99-103",
+     "gap": "Source-of-truth diverges from the hardened deployed unit; the live-trading kill default is not captured in git and is destroyed by the documented idempotent re-install. Inconsistent defense-in-depth vs the paper unit.",
+     "proposed_fix": "Add 'Environment=ENABLE_LIVE_TRADING=false' to deploy/systemd/polybot-live.service (matching the deployed unit and the paper unit) so process-env keeps overriding env.txt and reinstall is safe. Optionally add a commented UnsetEnvironment note.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-03",
+     "phase": "3/21",
+     "title": "install.sh never disables/removes the legacy bot-s1.service duplicate live unit",
+     "severity": "WARN",
+     "confidence": 0.8,
+     "spec_requirement": "Spec names the live unit bot-s1.service; assess whether the legacy disabled unit should be removed.",
+     "observed": "No bot-s1.service exists in the source tree (only the three polybot-*.service files). install.sh installs/enables exactly polybot-paper/live/dashboard (lines 99-118) and has no step to disable or delete a pre-existing bot-s1.service. EVIDENCE confirms bot-s1.service is still present on the VPS: disabled+inactive, but with a whole-tree ReadWritePaths=/opt/bot-s1 (less locked down than polybot-live's ReadWritePaths=/opt/polybot/data/live).",
+     "evidence": "deploy/install.sh:97-118; find shows only polybot-*.service in deploy/systemd/; EVIDENCE.md:17-19",
+     "gap": "A stale, more-privileged duplicate live unit lingers. Harmless while disabled, but an accidental 'systemctl start bot-s1' would launch a live engine that can write anywhere under /opt/bot-s1 and bypasses the newer isolation. Naming also contradicts the spec's expected unit name.",
+     "proposed_fix": "Add a cleanup block to install.sh: 'systemctl disable --now bot-s1.service 2>/dev/null || true; rm -f /etc/systemd/system/bot-s1.service' guarded so it only removes the legacy name, then daemon-reload. Document polybot-live.service as the canonical live unit.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-04",
+     "phase": "14/23",
+     "title": "No systemd-level health check (no WatchdogSec / Type=notify / sd_notify)",
+     "severity": "INFO",
+     "confidence": 0.9,
+     "spec_requirement": "Health checks / restart on failure for each unit.",
+     "observed": "All three units are Type=simple with no WatchdogSec=, no Type=notify, no sd_notify integration, and no ExecStartPre health probe (grep across deploy/ returns nothing). systemd therefore only restarts on process exit; an alive-but-unhealthy process (WS disconnected, event loop wedged, DB unreadable) is never auto-remediated by systemd. Application-level health does exist (dashboard /healthz, engine heartbeats to data/<mode>/engine.db, NotificationCenter staleness alerts), but that path notifies rather than restarts.",
+     "evidence": "deploy/systemd/*.service (Type=simple, no Watchdog); grep for WatchdogSec/Type=notify/sd_notify/ExecStartPre = none; dashboard/notifications.py:172-196 (app-level heartbeat staleness)",
+     "gap": "'Health checks' at the supervisor level are absent; recovery from hangs is manual. Acceptable given app-level alerting, but not a true health check.",
+     "proposed_fix": "Optionally add WatchdogSec= to the engines and call sd_notify('WATCHDOG=1') from the engine heartbeat loop (systemd restarts if heartbeats stop). Lower-effort: keep as-is and rely on the existing engine_stale critical alert.",
+     "fix_risk": "medium"
+    },
+    {
+     "id": "SYS-05",
+     "phase": "14",
+     "title": "No explicit 'DB unavailable' alert; engine-up-but-DB-unreadable emits nothing",
+     "severity": "INFO",
+     "confidence": 0.75,
+     "spec_requirement": "Monitoring thresholds include 'db unavailable'.",
+     "observed": "EngineReader exposes availability (engine_view.py:227 'available': self._reader.available) and db.py:249-251 logs 'engine db unavailable' at debug, so the UI can show the flag. But NotificationCenter has no rule for available==false: _evaluate_engine (notifications.py:172-180) fires engine_stale only when heartbeat_age_s is not None AND > threshold. If the DB is completely unreadable while the unit is 'active', heartbeat={} and age=None, so no alert fires.",
+     "evidence": "dashboard/engine_view.py:227,229-230; dashboard/notifications.py:172-180; dashboard/db.py:249-251",
+     "gap": "The 'db unavailable' condition is surfaced as a boolean but not alerted, so a silent DB failure on a running engine produces no notification.",
+     "proposed_fix": "In _evaluate_engine, when service.healthy and engine.get('available') is False (or heartbeat empty with a healthy unit), emit a critical 'engine_db_unavailable' alert.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-06",
+     "phase": "21",
+     "title": "nginx upstream hardcoded to :8787 while deployed dashboard binds :8080",
+     "severity": "INFO",
+     "confidence": 0.7,
+     "spec_requirement": "Reverse-proxy config must match the dashboard bind port.",
+     "observed": "deploy/nginx/polybot-dashboard.conf:15 upstream server 127.0.0.1:8787, consistent with config.py default port 8787 (config.py:61,160). EVIDENCE reports the running dashboard binds 127.0.0.1:8080 (DASHBOARD_PORT overridden in env.dashboard.txt). If nginx were activated it would 502 against 8787. Currently harmless: install.sh:121-129 installs the site but does not enable TLS/DNS, and the dashboard is 127.0.0.1-only, so nginx is not the active public surface.",
+     "evidence": "deploy/nginx/polybot-dashboard.conf:14-17; dashboard/config.py:61,160; EVIDENCE.md:12 (binds 8080)",
+     "gap": "Source (nginx+config both 8787) is internally consistent, but the deployment overrode the port without updating nginx; a future 'enable nginx' would break the proxy.",
+     "proposed_fix": "Either drop the env.dashboard.txt DASHBOARD_PORT=8080 override (use 8787), or make the nginx upstream port a documented variable the operator must keep in sync; note it in install.sh output.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-07",
+     "phase": "23",
+     "title": "Dashboard runs a redundant market-data collector instead of a shared read-only layer",
+     "severity": "INFO",
+     "confidence": 0.7,
+     "spec_requirement": "Resource efficiency: no redundant market-data collectors; prefer a shared read-only market layer; no unnecessary polling.",
+     "observed": "dashboard/state.py:86-88 starts three market tasks (discovery_loop, book_loop, candle_loop). market_feed.py:1-13 independently subscribes to the public CLOB market websocket, runs a REST book-snapshot backstop, and samples candles \u2014 a full second market-data pipeline parallel to each engine's own collectors. So live, paper and dashboard processes each subscribe to Polymarket market data rather than sharing one read-only layer. Cadences are modest (market_book_interval_s=1.0, candle_interval_s=15, discovery 60s per config.py:100-102) and EVIDENCE shows WS stable (reconnects=0) with headroom, so it is not currently harmful.",
+     "evidence": "dashboard/state.py:56,86-88; dashboard/market_feed.py:1-13,44-52; dashboard/config.py:97-104",
+     "gap": "Three concurrent market-data subscriptions is the redundancy the spec cautions against; it triples upstream book/WS load and duplicates candle computation. Tolerable at current scale but not the 'shared read-only market layer' the spec prefers.",
+     "proposed_fix": "Longer-term: have the dashboard read candles/books the engines already persist (shared read-only layer) instead of maintaining its own WS+REST pipeline; or gate the dashboard feed off when an engine already tracks the same market. No urgent change given current load.",
+     "fix_risk": "high"
+    },
+    {
+     "id": "SYS-P1",
+     "phase": "3",
+     "title": "PASS: three independent units, boot-enabled, non-root, correct WorkingDirectory",
+     "severity": "PASS",
+     "confidence": 0.95,
+     "spec_requirement": "3 separate units run independently, start on boot (WantedBy=multi-user), non-root user, correct WorkingDirectory.",
+     "observed": "Each unit is standalone (own ExecStart run.py/run_paper.py/run_dashboard.py), User=polybot/Group=polybot templated to the real SERVICE_USER via install.sh:100-102 sed (EVIDENCE: botuser, non-root), WorkingDirectory=/opt/polybot templated to INSTALL_DIR (/opt/bot-s1), and all carry [Install] WantedBy=multi-user.target. install.sh:114-118 enables all three (live enabled but intentionally not started).",
+     "evidence": "deploy/systemd/polybot-{live,paper,dashboard}.service:9-12,52-54/55-57/53-55; deploy/install.sh:99-118; EVIDENCE.md:11-13",
+     "gap": "None.",
+     "proposed_fix": "None.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "SYS-P2",
+     "phase": "3/23",
+     "title": "PASS: resource ceilings appropriately sized for 2 vCPU / 4 GB",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Resource limits suited to 2vCPU/4GB.",
+     "observed": "live MemoryMax=700M/High=520M/CPUQuota=70%/TasksMax=96; paper 600M/450M/60%/96; dashboard 700M/520M/60%/128. Total MemoryMax=2000M leaves ~1.8Gi for OS on the 3.8Gi box; total CPUQuota=190% stays under the 200% (2 vCPU) ceiling; MemoryHigh provides soft-throttle before the hard cap. EVIDENCE shows all three well within limits at runtime.",
+     "evidence": "deploy/systemd/polybot-live.service:43-46; polybot-paper.service:47-49; polybot-dashboard.service:44-47; EVIDENCE.md:7",
+     "gap": "Minor: aggregate CPUQuota 190% is tight if all three peg simultaneously, but workload is IO/network-bound and idle in practice.",
+     "proposed_fix": "None required.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "SYS-P3",
+     "phase": "3",
+     "title": "PASS: strong per-engine sandboxing with least-privilege writable paths",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Hardening; non-root; least privilege.",
+     "observed": "Engines set NoNewPrivileges, PrivateTmp, PrivateDevices, ProtectSystem=strict, ProtectHome, ProtectKernelTunables/Modules, ProtectControlGroups, RestrictSUIDSGID, RestrictRealtime, LockPersonality, RestrictAddressFamilies=AF_INET/INET6/UNIX, SystemCallFilter=@system-service (EPERM), and ReadWritePaths scoped to only data/<mode> so the read-only /opt tree cannot be modified. Dashboard deliberately relaxes NoNewPrivileges/RestrictSUIDSGID (documented, needed for sudo -n systemctl) but compensates with a narrowly-scoped sudoers allowlist (3 units x start/stop/restart) and layered ReadOnlyPaths(data/live,data/paper)+ReadWritePaths(their /state only) so it can drop a KILL_SWITCH without gaining write on the engine DBs.",
+     "evidence": "deploy/systemd/polybot-live.service:26-41; polybot-paper.service:27-43; polybot-dashboard.service:22-42; deploy/polybot-dashboard.sudoers:11-36",
+     "gap": "Optional extra hardening not set (ProtectClock, ProtectHostname, ProtectKernelLogs, MemoryDenyWriteExecute, SystemCallArchitectures=native, CapabilityBoundingSet=) \u2014 enhancement only.",
+     "proposed_fix": "Optionally add the extra Protect*/CapabilityBoundingSet directives to the engines for defense-in-depth.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "SYS-P4",
+     "phase": "14",
+     "title": "PASS: VPS monitoring is comprehensive, read-only, and crash-isolated",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Monitoring shows CPU/RAM/Disk/Network/uptimes(vps,bot,dash,paper)/running+failed services/restart counts/db size/log size with thresholds.",
+     "observed": "vps.py collects CPU percent+per-core+load1/5/15+core counts, memory+swap, disk usage+percent on the data partition (falls back to / if absent), network rx/tx rates+errors+drops+connection count, vps uptime (boot_time), dashboard process uptime, per-service state via 'systemctl show' (LoadState/ActiveState/SubState/UnitFileState/Result/ExecMainPID/NRestarts/MemoryCurrent/CPUUsageNSec) yielding healthy/failed/available/restarts/uptime_s for paper+live+dashboard, and storage() sizes for each engine DB, each engine log tree, dashboard DB and backups. Sampling runs off-loop via asyncio.to_thread on a 5s cadence and is wrapped so 'monitoring must never crash the app'. _int() correctly maps systemd's 2^64-1 'not set' to 0; _connection_count returns -1 (not a fake 0) when unprivileged.",
+     "evidence": "dashboard/vps.py:61-105,107-129,144-177,180-190,219-223,244-250; dashboard/config.py:108-109",
+     "gap": "Dashboard's own log size is not in storage() (it logs to journald, so N/A is acceptable).",
+     "proposed_fix": "None required.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "SYS-P5",
+     "phase": "14",
+     "title": "PASS: alert thresholds wired with correct directions, cooldown, and honest gating",
+     "severity": "PASS",
+     "confidence": 0.85,
+     "spec_requirement": "Thresholds: CPU high, RAM high, disk low, service crashed, db unavailable.",
+     "observed": "NotificationCenter._evaluate_system fires high_cpu at cpu>=alert_cpu_pct(85), high_memory at mem>=88, high_disk at disk.percent>=90 (correct 'disk low'=high-used direction), and a critical service_failed_<name> for any unit with available && failed. Thresholds are env-overridable with sane defaults (config.py:112-123,198-206) and delivery respects per-alert cooldown. Live/engine health, allowance, low-balance, market-discovery and WS-disconnect rules add further coverage. Values are only emitted when present (None-guards), avoiding fabricated zeros.",
+     "evidence": "dashboard/notifications.py:112-130; dashboard/config.py:112-123,198-206",
+     "gap": "'db unavailable' is surfaced but not itself alerted \u2014 tracked separately as SYS-05 (INFO).",
+     "proposed_fix": "See SYS-05.",
+     "fix_risk": "none"
+    },
+    {
+     "id": "SYS-P6",
+     "phase": "3",
+     "title": "PASS: paper unit enforces dry-run in depth and scrubs all wallet credentials",
+     "severity": "PASS",
+     "confidence": 0.9,
+     "spec_requirement": "Paper engine must never touch live funds/credentials; separate data tree.",
+     "observed": "polybot-paper.service hardcodes Environment=ENABLE_LIVE_TRADING=false (line 24) AND UnsetEnvironment scrubs POLYMARKET_PRIVATE_KEY/PROXY_ADDRESS and all POLY_API_*/POLY_BUILDER_* secrets (line 25) as a second line of defence, with ReadWritePaths locked to /opt/polybot/data/paper only (line 43) so it cannot read or write live state. This is the defense-in-depth the live unit source is currently missing (see SYS-02).",
+     "evidence": "deploy/systemd/polybot-paper.service:22-25,42-43",
+     "gap": "None for paper; contrast documented as SYS-02 for live.",
+     "proposed_fix": "None; mirror this pattern into the live unit (SYS-02).",
+     "fix_risk": "none"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "SYS-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: [Service] section begins at line 7 in all three units, and StartLimitIntervalSec/StartLimitBurst appear inside it (live 15-16, paper 16-17, dashboard 15-16). Since systemd v230 these keys are only honored in [Unit]; in [Service] they are ignored as unknown keys, so the documented crash-loop caps (5/600s, 6/300s) never take effect. Combined with Restart=always + RestartSec=5-10 the intended 'give up if crash-looping' behavior is defeated. Real reliability defect; WARN is appropriate.",
+     "evidence": "deploy/systemd/polybot-live.service:7,15-16; polybot-paper.service:7,16-17; polybot-dashboard.service:7,15-16; grep confirmed no StartLimit keys exist under any [Unit] section"
+    },
+    {
+     "id": "SYS-02",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Verified: source polybot-live.service lines 21-24 set only PYTHONUNBUFFERED=1 plus a comment and do NOT set ENABLE_LIVE_TRADING=false, whereas paper unit line 24 hardcodes it (and line 25 scrubs creds). install.sh:100-102 regenerates /etc/systemd/system units from these source files on every run (only substituting paths/user), and EVIDENCE.md:22-23 confirms the deployed live unit carries ENABLE_LIVE_TRADING=false added out-of-band. Reinstall therefore silently strips the deployed dry-run override, a real config-drift/reproducibility and safety-inconsistency gap. WARN correct. Note: the proposed fix of hardcoding false would also disable the documented env.txt=true arming path since process env wins over env.txt, but this does not invalidate the finding.",
+     "evidence": "deploy/systemd/polybot-live.service:21-24; deploy/systemd/polybot-paper.service:24-25; deploy/install.sh:99-103; EVIDENCE.md:22-23"
+    },
+    {
+     "id": "SYS-03",
+     "verdict": "ADJUSTED",
+     "corrected_severity": "INFO",
+     "reason": "Facts confirmed: no bot-s1.service exists in deploy/systemd (only the three polybot-*.service files), install.sh contains zero bot-s1 references and its systemd block (lines 99-118) never disables or removes a legacy unit, and EVIDENCE.md:17-19 confirms bot-s1.service persists on the VPS. However severity is overstated: the legacy unit is disabled AND inactive with NRestarts=0, and because it is not in source control install.sh causes no reproducibility regression and cannot recreate it (unlike SYS-02). Triggering harm requires a deliberate manual start of a disabled unit. This is a valid hygiene/cleanup recommendation, not a warning-level active defect; adjust to INFO.",
+     "evidence": "ls deploy/systemd (only polybot-*.service); grep -rn 'bot-s1' deploy/ returns nothing; deploy/install.sh:97-118; EVIDENCE.md:17-19"
+    }
+   ]
+  }
+ },
+ {
+  "lane": "tests",
+  "component": "Tests",
+  "analyze": {
+   "lane": "tests",
+   "component": "Tests",
+   "component_status": "FAIL",
+   "summary": "Test coverage is strong for isolation (wallet-secret scrubbing, path separation, dashboard auth/RBAC/CSRF/WebSocket) and for the allowance readiness gate, but four spec-required Phase-24 test categories are entirely MISSING: (1) the USDC balance=0 readiness/startup gate (BalanceManager.validate) is untested while the symmetric allowance gate is well-tested; (2) the consolidated TradingReadiness reporter has zero tests; (3) \"API failure => UNKNOWN\" for the live-account panel is never exercised (DASHBOARD_LIVE_SYNC=false in every test, so the live_sync failure path \u2014 the same code producing the known runtime EAGAIN defect \u2014 is untested); (4) \"NO ACTIVE MARKET\" (market_feed discovery/status) and \"insufficient indicator data => N/A\" (indicators.py) have no tests at all. Several present tests also carry weak data-honesty assertions (0-trades N/A, chart series, control target isolation).",
+   "findings": [
+    {
+     "id": "TST-ISO-01",
+     "phase": "24 / Isolation",
+     "title": "Paper cannot access live secrets \u2014 well covered",
+     "severity": "PASS",
+     "spec_requirement": "Test that the paper engine cannot access live wallet secrets.",
+     "observed": "tests/test_paper_offline.py::test_paper_settings_never_carry_a_key asserts settings.private_key=='' and settings.proxy_address=='' under paper mode even when POLYMARKET_PRIVATE_KEY/PROXY_ADDRESS are set in the environment; ::test_scrub_removes_every_wallet_variable asserts scrub_wallet_secrets() removes every WALLET_SECRET_ENV var and forces ENABLE_LIVE_TRADING=false; ::test_paper_and_live_paths_never_overlap asserts db/logs/state/kill_switch differ.",
+     "evidence": "tests/test_paper_offline.py:186-228",
+     "confidence": 0.95,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-ISO-02",
+     "phase": "24 / Isolation",
+     "title": "Paper cannot submit live orders \u2014 covered (structurally, no explicit attempt test)",
+     "severity": "PASS",
+     "spec_requirement": "Test that paper cannot submit live orders.",
+     "observed": "test_paper_settings_never_carry_a_key asserts settings.enable_live_trading is False in paper mode; scrub forces ENABLE_LIVE_TRADING=false; the paper engine matches only against PaperExchange (synthetic books, no CLOB client) throughout tests/test_paper_offline.py. No single test drives 'paper tries to reach the live CLOB and is refused', but the credential+flag isolation makes a live submission unconstructible.",
+     "evidence": "tests/test_paper_offline.py:199-218; tests/test_paper_offline.py:23-29 (PaperExchange fixture)",
+     "confidence": 0.8,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-ISO-03",
+     "phase": "24 / Isolation",
+     "title": "No test that paper controls cannot stop live (and vice versa) at the unit/target level",
+     "severity": "WARN",
+     "spec_requirement": "Test that paper controls cannot stop live and live controls cannot stop paper.",
+     "observed": "The only control-isolation tests are RBAC (test_viewer_cannot_control_or_administer) and bad-target rejection (test_only_allowlisted_service_actions_are_accepted, which rejects target='root' and shell-injection actions). No test asserts that ControlPlane.unit_for('paper')/service_action('paper','stop') maps ONLY to paper_unit and never touches live_unit (and the reverse). Note the RBAC model does not separate the two: both 'admin' and 'trader' roles hold control.paper AND control.live (dashboard/security.py:34-41), so permission alone cannot enforce this isolation \u2014 only the target\u2192unit mapping does, and that mapping is untested.",
+     "evidence": "tests/test_dashboard_offline.py:190-204,227-237; dashboard/control.py:69-95; dashboard/security.py:33-43",
+     "confidence": 0.85,
+     "proposed_fix": "Add a test that mocks ControlPlane._run_systemctl and asserts service_action('paper','stop') is invoked with the paper unit only (and never live_unit), and symmetrically for 'live'; also assert unit_for('paper')!=unit_for('live').",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DASH-01",
+     "phase": "24 / Dashboard",
+     "title": "Auth, CSRF, RBAC, API endpoints and WebSocket are thoroughly covered",
+     "severity": "PASS",
+     "spec_requirement": "Tests for dashboard auth, authz, CSRF, API endpoints, WebSocket, database.",
+     "observed": "Auth: test_everything_requires_authentication, test_bad_credentials_are_rejected, test_repeated_failures_trigger_a_lockout (429), test_logout_revokes_the_session, test_session_cookie_is_httponly, test_weak_passwords_are_refused. CSRF: test_writes_without_a_csrf_token_are_refused, test_a_wrong_csrf_token_is_refused. RBAC: test_viewer_cannot_control_or_administer, test_the_last_admin_cannot_be_removed, test_privileged_actions_are_audited. API/DB: snapshot/engine/analytics/journal/export/notifications/config all read back real recorded EngineRecorder DB rows. WebSocket: test_websocket_requires_a_session, test_websocket_rejects_a_foreign_origin, test_websocket_streams_a_snapshot.",
+     "evidence": "tests/test_dashboard_offline.py:126-215,269-383,389-431",
+     "confidence": 0.95,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-DASH-02",
+     "phase": "24 / Dashboard (authz)",
+     "title": "RBAC test covers only admin vs viewer, not the 'trader' boundary",
+     "severity": "INFO",
+     "spec_requirement": "Test authorization boundaries for each role.",
+     "observed": "security.py defines three roles (admin, trader, viewer). Tests exercise admin (full) and viewer (view-only) but never the 'trader' role, whose distinguishing boundary is: has control/emergency/backup/export but NOT user administration nor control.dashboard. That boundary is untested.",
+     "evidence": "dashboard/security.py:29-43; tests/test_dashboard_offline.py:190-204 (only 'viewer')",
+     "confidence": 0.9,
+     "proposed_fix": "Add a test creating a 'trader' user and asserting it can control paper/live but receives 403 on GET/POST /api/users and on control.dashboard actions.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DASH-03",
+     "phase": "24 / Dashboard (charts)",
+     "title": "Chart rendering and most chart data-series are untested",
+     "severity": "WARN",
+     "spec_requirement": "Tests for dashboard charts.",
+     "observed": "Client chart code (dashboard/static/app.js, charts.js) has no JS tests, including empty-state text ('Not enough trades yet', app.js:1133). Server-side chart series are only partially covered: test_analytics asserts equity.samples and max_drawdown, but there is no test for analytics._histogram (bins/counts), the drawdown_series array, or daily-returns bucketing that the charts consume.",
+     "evidence": "tests/test_dashboard_offline.py:302-309; dashboard/analytics.py:184-303; dashboard/static/app.js:1133",
+     "confidence": 0.8,
+     "proposed_fix": "Add analytics unit tests asserting histogram bins/counts, drawdown_series shape/sign, and daily-return buckets for a known equity/trade fixture; optionally a smoke test that the /api/engine/{mode}/analytics payload contains every series the charts read.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DASH-04",
+     "phase": "24 / Dashboard + Data correctness (API failure)",
+     "title": "MISSING: 'API failure => UNKNOWN' for the live-account panel is never exercised",
+     "severity": "FAIL",
+     "spec_requirement": "Test that on API failure the dashboard shows UNKNOWN (not fabricated zeros) \u2014 both as a Dashboard 'API failure' test and a Data-correctness 'API failure => UNKNOWN' test.",
+     "observed": "Every dashboard test sets DASHBOARD_LIVE_SYNC=false (tests/test_dashboard_offline.py:29), so the live_sync path is disabled. The only live_sync coverage is test_read_only_exchange_blocks_writes (write-method blocking). The failure/degradation path in live_sync.py (log.warning 'live sync unavailable' when the authenticated REST calls raise \u2014 the exact code producing the known runtime EAGAIN defect) is never driven, so nothing asserts the live_account snapshot section degrades to UNKNOWN/unavailable rather than showing stale or zeroed balances/allowances.",
+     "evidence": "tests/test_dashboard_offline.py:29,442-449; dashboard/live_sync.py:101",
+     "confidence": 0.85,
+     "proposed_fix": "Add a test that constructs LiveSync with a ReadOnlyExchange whose methods raise, runs a sync cycle, and asserts the snapshot['live_account'] status is UNKNOWN/unavailable with no fabricated numeric fields (e.g. balance is None, not 0.0).",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-SAFE-01",
+     "phase": "24 / Trading safety",
+     "title": "Live trading remains disabled \u2014 covered",
+     "severity": "PASS",
+     "spec_requirement": "Test that live trading remains disabled.",
+     "observed": "test_startup_offline.py runs the full TradingBot.startup with ENABLE_LIVE_TRADING=false and asserts all placed orders are simulated (o.simulated). test_engine_offline.py drives OrderManager(dry_run=True) and asserts simulated orders. test_paper_offline test_scrub forces ENABLE_LIVE_TRADING=false and test_paper_settings asserts enable_live_trading is False.",
+     "evidence": "tests/test_startup_offline.py:17-25,110-112; tests/test_engine_offline.py:54-59,75-76; tests/test_paper_offline.py:189-196,213-215",
+     "confidence": 0.9,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-SAFE-02",
+     "phase": "24 / Trading safety (readiness allowance)",
+     "title": "Readiness blocks when allowance=0 \u2014 well covered",
+     "severity": "PASS",
+     "spec_requirement": "Test that readiness blocks when USDC allowance=0.",
+     "observed": "tests/test_allowance_offline.py covers: sufficient passes+refreshes; zero allowance blocks live (AllowanceError); zero allowance only warns in dry-run (returns False); partial shortfall on one spender blocks; empty allowance map blocks; read error blocks live but not dry-run; wrong-network blocks and does not even read allowances.",
+     "evidence": "tests/test_allowance_offline.py:42-105",
+     "confidence": 0.95,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-SAFE-03",
+     "phase": "24 / Trading safety (readiness balance)",
+     "title": "MISSING: no test that readiness/startup blocks when USDC balance=0",
+     "severity": "FAIL",
+     "spec_requirement": "Test that readiness blocks when balance=0.",
+     "observed": "polybot/wallet/balance.py BalanceManager.validate() raises InsufficientBalanceError when balance<min_balance, and main.py:136-141 escalates that to StartupError in live mode (warns in dry-run). This safety gate has ZERO test coverage \u2014 the only balance test is PaperBalanceManager (paper simulation). This is an asymmetric gap: the allowance=0 gate is thoroughly tested but the symmetric balance=0 gate is not, despite runtime evidence showing usdc_balance 0.0<1.0 is a live blocker.",
+     "evidence": "polybot/wallet/balance.py:44-53; polybot/main.py:132-141; tests/test_paper_offline.py:56-62 (only PaperBalanceManager)",
+     "confidence": 0.9,
+     "proposed_fix": "Add an offline test with a fake ClobExchange returning balance 0.0: assert BalanceManager(min_balance=1.0).validate() raises InsufficientBalanceError, and (via a startup-style harness) that live mode escalates to StartupError while dry-run only warns.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-SAFE-04",
+     "phase": "24 / Trading safety (readiness reporter)",
+     "title": "MISSING: consolidated TradingReadiness reporter is entirely untested",
+     "severity": "WARN",
+     "spec_requirement": "Test that the readiness verdict blocks when balance=0 / allowance=0 / trading disabled (server-authoritative report).",
+     "observed": "polybot/wallet/readiness.py TradingReadiness.evaluate() (the aggregator that produces readiness.json with live_ready + missing_requirements for auth/closed-only/maker/allowance/deposit-enabled/balance) has no test. No test asserts that missing balance and allowance appear in missing_requirements, that deposit_wallet_enabled==(allowance>0), or that live_ready flips false. This is the artifact the dashboard/monitoring surface, so its honesty is untested.",
+     "evidence": "polybot/wallet/readiness.py:52-154; grep of tests/ shows no reference to TradingReadiness/readiness",
+     "confidence": 0.9,
+     "proposed_fix": "Add a test driving TradingReadiness.evaluate() with a fake exchange (zero balance, zero allowances, mismatched api_key) and assert live_ready is False, each expected 'checks' entry ok flag, and that missing_requirements names the balance/allowance/deposit blockers.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DATA-01",
+     "phase": "24 / Data correctness (0 trades => N/A)",
+     "title": "0-trades N/A behaviour is asserted only shallowly (fake zeros not challenged)",
+     "severity": "WARN",
+     "spec_requirement": "Test that 0 trades => N/A (not misleading zeros).",
+     "observed": "test_a_stopped_engine_degrades_to_empty_not_an_error asserts summary.available is False and analytics total_trades==0, but does not assert the honesty markers: _empty_trade_stats() returns win_rate=0.0, net_pnl=0.0, average_trade=0.0 (numeric zeros) and only profit_factor/average_r_multiple/risk_reward_ratio/payoff_ratio as None. No test pins that the N/A fields are None so the UI renders '\u2014' rather than a real 0.00; a regression turning a None into 0.0 would pass silently.",
+     "evidence": "tests/test_dashboard_offline.py:293-299; dashboard/analytics.py:79-90",
+     "confidence": 0.75,
+     "proposed_fix": "Extend the empty-engine test to assert analytics['trades']['profit_factor'] is None (and the other None sentinels) and that equity_stats sharpe/sortino are None on empty, documenting the N/A contract.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DATA-02",
+     "phase": "24 / Data correctness (no market)",
+     "title": "MISSING: 'NO ACTIVE MARKET' / market discovery + status has no tests",
+     "severity": "FAIL",
+     "spec_requirement": "Test that no market => NO ACTIVE MARKET.",
+     "observed": "dashboard/market_feed.py (discovery loop, _classify, TrackedMarket.status() returning open/closed/settling/paused/'no book', last_discovery_error handling) has no test at all. Nothing asserts that when zero markets are discovered the snapshot 'markets' section reports NO ACTIVE MARKET / empty honestly rather than fabricating a market, nor that a discovery failure surfaces an error instead of silently emptying the panel.",
+     "evidence": "dashboard/market_feed.py:135-146,196-254; grep of tests/ shows no market_feed/MarketFeed/discover reference",
+     "confidence": 0.85,
+     "proposed_fix": "Add offline tests for market_feed: with an empty/failed discovery fetch, assert the markets snapshot reports NO ACTIVE MARKET (and last_discovery_error is set on failure); with a fixture book, assert status() transitions across open/no-book/settling/paused/closed.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DATA-03",
+     "phase": "24 / Data correctness (insufficient indicator data)",
+     "title": "MISSING: 'insufficient indicator data => N/A' (indicators.py + Sharpe sample gating) untested",
+     "severity": "FAIL",
+     "spec_requirement": "Test that insufficient indicator data => N/A.",
+     "observed": "dashboard/indicators.py (compute_all returns {'ready':False,'bars':0} on no candles and None per indicator when history is short, rendered as '\u2014') has zero tests. Additionally analytics.equity_stats gates Sharpe/Sortino/volatility behind len(daily)>=2 and returns None for <2 points (analytics.py:129-159), but test_analytics uses 6 well-spaced samples and never asserts the None-on-insufficient-data path. So both indicator-level and equity-ratio 'N/A on thin data' contracts are unverified.",
+     "evidence": "dashboard/indicators.py:248-256; dashboard/analytics.py:129-135,145-159; tests/test_dashboard_offline.py:302-309",
+     "confidence": 0.85,
+     "proposed_fix": "Add indicators tests: empty candles => ready False; a few candles below each indicator's window => that indicator is None. Add an analytics test with <2 equity points asserting sharpe/sortino/volatility/calmar are None while samples reports the real count.",
+     "fix_risk": "low"
+    },
+    {
+     "id": "TST-DATA-04",
+     "phase": "24 / Data correctness (strategy honesty)",
+     "title": "Strategy panel does not fabricate confidence \u2014 covered",
+     "severity": "PASS",
+     "spec_requirement": "Data honesty: do not invent confidence/SL/TP the strategy does not provide.",
+     "observed": "test_strategy_view_merges_state_and_performance asserts strategy['confidence'] is None with the comment 'the compiled strategy publishes no confidence', confirming the dashboard surfaces None rather than a fabricated value.",
+     "evidence": "tests/test_dashboard_offline.py:312-321",
+     "confidence": 0.9,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-ISO-04",
+     "phase": "24 / Isolation (dashboard cannot trade live)",
+     "title": "Dashboard live-sync is read-only \u2014 covered",
+     "severity": "PASS",
+     "spec_requirement": "Isolation: the dashboard's live-account access cannot place/cancel live orders.",
+     "observed": "test_read_only_exchange_blocks_writes asserts ReadOnlyExchange raises AttributeError('read-only') for place_order/cancel/cancel_all/create_order/post_order; test_config_endpoint_masks_secrets and test_mask_secrets_redacts_keys_and_tokens confirm secrets are not leaked via the dashboard.",
+     "evidence": "tests/test_dashboard_offline.py:426-448",
+     "confidence": 0.9,
+     "fix_risk": "none"
+    },
+    {
+     "id": "TST-PREFLIGHT-01",
+     "phase": "24 / Scripts",
+     "title": "preflight.py and live_execution_audit.py have no automated tests",
+     "severity": "INFO",
+     "spec_requirement": "Focus files include scripts/preflight.py and scripts/live_execution_audit.py.",
+     "observed": "Neither script is imported by any test; preflight is validated only by manual runtime execution (EVIDENCE: 'PREFLIGHT PASSED'). live_execution_audit.py is intentionally excluded from automated runs because it attempts real order submission (EVIDENCE lines 77-79). preflight's pure helpers (_fp, _mask_addr, _host) and its exit-code contract could be unit-tested offline without network.",
+     "evidence": "scripts/preflight.py:27-53,56-133; scripts/live_execution_audit.py (whole file); grep of tests/ shows no scripts import",
+     "confidence": 0.85,
+     "proposed_fix": "Add offline unit tests for preflight helpers (_mask_addr, _host, _fp) and, with connectivity/strategy stubbed, assert the documented exit codes (3 token missing, 4 strategy fail, 6 config error). Leave live_execution_audit.py unautomated by design.",
+     "fix_risk": "low"
+    }
+   ]
+  },
+  "verify": {
+   "results": [
+    {
+     "id": "TST-ISO-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Real coverage gap. control.py:69-74 unit_for() is the ONLY thing enforcing paper/live target isolation, since security.py:33-43 grants BOTH admin and trader control.paper AND control.live, so permission cannot separate them. No test asserts service_action('paper','stop') maps only to paper_unit (and never live_unit) or unit_for('paper')!=unit_for('live'). The existing control tests (test_viewer_cannot_control_or_administer:190-204, test_only_allowlisted_service_actions_are_accepted:227-237) only cover RBAC and bad-target/shell-injection rejection; test_emergency_stop_writes_the_kill_switch:246 uses paper only and never asserts live is untouched. WARN is right: the mapping is a trivial dict (low regression risk) but cross-contamination is a genuine operational-safety concern distinct from RBAC.",
+     "evidence": "dashboard/control.py:69-74; dashboard/security.py:33-43; tests/test_dashboard_offline.py:190-204,227-237,246 (no unit-mapping isolation test)"
+    },
+    {
+     "id": "TST-DASH-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Real gap. dashboard/static/ contains only app.js/charts.js/index.html/styles.css with zero JS test files (no *.test.js/*.spec.js); empty-state text 'Not enough trades yet' confirmed at app.js:1133. Server-side, test_analytics_are_computed_from_recorded_trades (302-309) asserts only equity.samples and max_drawdown; there is no test for the histogram/distribution (function is pnl_distribution at analytics.py:289 \u2014 the finding's name '_histogram' is imprecise but the substance holds), the drawdown_series array (analytics.py:135,180), or _daily_returns bucketing (analytics.py:198). WARN correct: charts are display-only and 401-gated.",
+     "evidence": "dashboard/static/app.js:1133; dashboard/analytics.py:184-303 (pnl_distribution:289, drawdown_series:135/180, _daily_returns:198); tests/test_dashboard_offline.py:302-309; no JS test files present"
+    },
+    {
+     "id": "TST-DASH-04",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "Real gap, arguably understated. Every dashboard test sets DASHBOARD_LIVE_SYNC=false (test_dashboard_offline.py:29) so the sync path never runs; the only live_sync coverage is test_read_only_exchange_blocks_writes (442-449). The failure path is untested AND the code does NOT degrade to UNKNOWN: _empty_state() initializes wallet.balance=0.0 (a fabricated zero, not None), and sync_once() runs sections under asyncio.gather(return_exceptions=True) so a failing _sync_balance (the exact EAGAIN scenario) silently leaves balance at 0.0 \u2014 indistinguishable from a real zero. Only the status block (api_ok/error_count/last_error) signals degradation; the numeric balance/allowance fields are not nulled. No test asserts honest UNKNOWN/None on failure. FAIL justified.",
+     "evidence": "tests/test_dashboard_offline.py:29,442-449; dashboard/live_sync.py:_empty_state balance:0.0, sync_once:205-233 (return_exceptions=True), _sync_balance:270-283"
+    },
+    {
+     "id": "TST-SAFE-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "Real asymmetric gap in a primary financial safety gate. balance.py:44-53 BalanceManager.validate() raises InsufficientBalanceError when balance<min_balance; main.py:135-142 escalates to StartupError in live mode but only warns in dry-run. This has ZERO test coverage \u2014 grep of tests/ finds BalanceManager only via PaperBalanceManager (test_paper_offline.py:14,59), and test_startup_offline.py uses FakeClient returning 1000 USDC (balance '1000000000', line 58), exercising only the happy path. By contrast the parallel allowance=0 gate is thoroughly tested (test_allowance_offline.py has 7 tests incl. test_insufficient_blocks_live and dry-run-warns). Runtime evidence (usdc_balance 0.0<1.0) shows this is a live blocker. FAIL correct.",
+     "evidence": "polybot/wallet/balance.py:44-53; polybot/main.py:135-142; tests/test_paper_offline.py:14,59 (PaperBalanceManager only); tests/test_startup_offline.py:58 (1000 USDC happy path); tests/test_allowance_offline.py:48-105 (symmetric gate fully tested)"
+    },
+    {
+     "id": "TST-SAFE-04",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Real gap. readiness.py:52-154 TradingReadiness.evaluate() builds readiness.json (live_ready + checks + missing_requirements for auth/closed-only/maker/allowance/deposit_wallet_enabled/balance; deposit_enabled==allowance_positive at line 110). grep of tests/ returns zero references to readiness/TradingReadiness; test_startup_offline asserts nothing about a readiness report. The honesty of the dashboard/monitoring artifact is therefore unverified by unit test. Note readiness.json IS validated at runtime per EVIDENCE.md (live_ready=false, honest blockers), which is why WARN (not FAIL) is appropriate.",
+     "evidence": "polybot/wallet/readiness.py:52-154 (deposit_enabled=allowance_positive:110); grep tests/ shows no readiness/TradingReadiness reference"
+    },
+    {
+     "id": "TST-DATA-01",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Real gap. analytics.py:79-90 _empty_trade_stats() returns numeric zeros for win_rate/loss_rate/net_pnl/average_trade/expectancy (0.0) and None ONLY for profit_factor/average_r_multiple/risk_reward_ratio/payoff_ratio/best_market/worst_market. test_a_stopped_engine_degrades_to_empty_not_an_error (293-299) asserts only available is False and total_trades==0 \u2014 it never pins the None sentinels, so a regression flipping profit_factor None->0.0 would pass silently. Equally, equity_stats returns sharpe/sortino/volatility=None on <2 points (analytics.py:129-135) but no empty-engine test checks that. WARN correct.",
+     "evidence": "dashboard/analytics.py:79-90 (None sentinels), 129-135; tests/test_dashboard_offline.py:293-299 (asserts only total_trades==0)"
+    },
+    {
+     "id": "TST-DATA-02",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "FAIL",
+     "reason": "Real gap: an honesty-critical module with zero tests. market_feed.py:135-145 TrackedMarket.status() returns closed/settling/paused/'no book'/open; discover() (205-247) resets last_discovery_error and discovery_loop (196-203) captures it on failure. grep of tests/ finds no market_feed/MarketFeed/discover reference. Nothing asserts that zero discovered markets surfaces NO ACTIVE MARKET / empty honestly rather than fabricating a market, nor that a discovery failure sets last_discovery_error instead of silently emptying the panel. No runtime evidence covers the empty-market case either. FAIL justified for a wholly untested data-honesty surface.",
+     "evidence": "dashboard/market_feed.py:135-145 (status), 196-247 (discover/discovery_loop, last_discovery_error:170,201,241); grep tests/ shows no market_feed reference"
+    },
+    {
+     "id": "TST-DATA-03",
+     "verdict": "CONFIRMED",
+     "corrected_severity": "WARN",
+     "reason": "Real gap. indicators.py:248-256 compute_all() returns {'ready':False,'bars':0} on no candles and None per indicator when history is short (rendered '\u2014'); the module has zero tests (grep finds no indicators/compute_all reference in tests/). Separately analytics.equity_stats gates Sharpe/Sortino/volatility behind len(daily)>=2 and returns None for <2 points (analytics.py:129-135,145-159), but test_analytics uses 6 well-spaced samples (test_dashboard_offline.py:302-309) and never drives the None-on-insufficient-data path. Both 'N/A on thin data' contracts are unverified. WARN correct.",
+     "evidence": "dashboard/indicators.py:248-256; dashboard/analytics.py:129-135,145-159; tests/test_dashboard_offline.py:302-309; grep tests/ shows no indicators reference"
+    }
+   ]
+  }
+ }
+]
