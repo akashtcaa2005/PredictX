@@ -571,6 +571,3 @@ Use environment variables or a secrets manager.
 
 For Binance API keys, enable only the permissions required by the application and avoid unnecessary withdrawal permissions.
 
----
-
-# 🏭 Production
